@@ -19,7 +19,12 @@ CREATE TABLE IF NOT EXISTS settings (
     theme TEXT NOT NULL DEFAULT 'Небо',
     bind_keycode INTEGER,
     verified_bot_id TEXT NOT NULL DEFAULT '',
-    verified_chat_id TEXT NOT NULL DEFAULT ''
+    verified_chat_id TEXT NOT NULL DEFAULT '',
+    tg_proxy_type TEXT NOT NULL DEFAULT 'none',
+    tg_proxy_host TEXT NOT NULL DEFAULT '',
+    tg_proxy_port TEXT NOT NULL DEFAULT '',
+    tg_proxy_username TEXT NOT NULL DEFAULT '',
+    tg_proxy_password TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS meta (
@@ -53,6 +58,17 @@ def init_schema():
             conn.execute("ALTER TABLE settings ADD COLUMN vk_token TEXT NOT NULL DEFAULT ''")
         except sqlite3.OperationalError:
             pass
+        for column, definition in (
+            ('tg_proxy_type', "TEXT NOT NULL DEFAULT 'none'"),
+            ('tg_proxy_host', "TEXT NOT NULL DEFAULT ''"),
+            ('tg_proxy_port', "TEXT NOT NULL DEFAULT ''"),
+            ('tg_proxy_username', "TEXT NOT NULL DEFAULT ''"),
+            ('tg_proxy_password', "TEXT NOT NULL DEFAULT ''"),
+        ):
+            try:
+                conn.execute(f"ALTER TABLE settings ADD COLUMN {column} {definition}")
+            except sqlite3.OperationalError:
+                pass
         conn.execute("INSERT OR IGNORE INTO settings (id) VALUES (1)")
 
 

@@ -14,3 +14,6 @@
 Приложение не требует Cloudflare Worker или сервер исходного HelperTool.
 Для Telegram нужен Bot Token + Chat ID.
 Для VK нужен VK API Token + ID получателя.
+
+### Telegram proxy
+NeboProject supports per-application Telegram HTTP and SOCKS5 proxies. Configure them in the setup window under «Прокси». For SOCKS5, the build installs PySocks through `requests[socks]`.

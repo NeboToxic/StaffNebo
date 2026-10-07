@@ -17,6 +17,8 @@ from core.settings import load_settings, save_settings, update_settings
 from core.helpers import gui_print
 from threads.validation import ValidationThread
 from core.paths import resource_path, data_path
+from core.telegram_proxy import build_proxy_url, requests_proxies
+import requests
 
 
 class SetupWindow(BaseWindow):
@@ -306,6 +308,16 @@ class SetupWindow(BaseWindow):
                 self.bot_id_input.setText(settings.bot_id)
             if settings.chat_id:
                 self.tg_id_input.setText(settings.chat_id)
+            proxy_map = {'none': 'Без прокси', 'http': 'HTTP', 'socks5': 'SOCKS5'}
+            self.proxy_type_combo.setCurrentText(proxy_map.get(settings.tg_proxy_type or 'none', 'Без прокси'))
+            if settings.tg_proxy_host:
+                self.proxy_host_input.setText(settings.tg_proxy_host)
+            if settings.tg_proxy_port:
+                self.proxy_port_input.setText(settings.tg_proxy_port)
+            if settings.tg_proxy_username:
+                self.proxy_username_input.setText(settings.tg_proxy_username)
+            if settings.tg_proxy_password:
+                self.proxy_password_input.setText(settings.tg_proxy_password)
             if settings.vk_user_id:
                 self.vk_id_input.setText(settings.vk_user_id)
             if settings.vk_token:
@@ -404,6 +416,38 @@ class SetupWindow(BaseWindow):
         self.tg_id_input = QLineEdit()
         self.tg_id_input.setPlaceholderText("ID чата Telegram (число)")
         telegram_layout.addLayout(self._field_row("TG ID:", self.tg_id_input))
+
+        self.proxy_type_combo = QComboBox()
+        self.proxy_type_combo.addItems(["Без прокси", "HTTP", "SOCKS5"])
+        self.proxy_type_combo.currentTextChanged.connect(self._on_proxy_type_changed)
+        telegram_layout.addLayout(self._field_row("Прокси:", self.proxy_type_combo))
+
+        self.proxy_host_input = QLineEdit()
+        self.proxy_host_input.setPlaceholderText("Адрес прокси, например 127.0.0.1")
+        self.proxy_port_input = QLineEdit()
+        self.proxy_port_input.setPlaceholderText("Порт")
+        self.proxy_port_input.setFixedWidth(110)
+        proxy_addr_row = QHBoxLayout()
+        proxy_addr_row.setContentsMargins(0, 0, 0, 0)
+        proxy_addr_row.setSpacing(12)
+        proxy_addr_row.addWidget(self._field_label("Адрес / порт:"))
+        proxy_addr_row.addWidget(self.proxy_host_input, 1)
+        proxy_addr_row.addWidget(self.proxy_port_input)
+        telegram_layout.addLayout(proxy_addr_row)
+
+        self.proxy_username_input = QLineEdit()
+        self.proxy_username_input.setPlaceholderText("Логин (необязательно)")
+        self.proxy_password_input = QLineEdit()
+        self.proxy_password_input.setPlaceholderText("Пароль (необязательно)")
+        self.proxy_password_input.setEchoMode(QLineEdit.Password)
+        proxy_auth_row = QHBoxLayout()
+        proxy_auth_row.setContentsMargins(0, 0, 0, 0)
+        proxy_auth_row.setSpacing(12)
+        proxy_auth_row.addWidget(self._field_label("Авторизация:"))
+        proxy_auth_row.addWidget(self.proxy_username_input, 1)
+        proxy_auth_row.addWidget(self.proxy_password_input, 1)
+        telegram_layout.addLayout(proxy_auth_row)
+        self._on_proxy_type_changed(self.proxy_type_combo.currentText())
         content_layout.addWidget(self.telegram_widget)
 
         self.vk_widget = QWidget()
@@ -538,6 +582,13 @@ class SetupWindow(BaseWindow):
         except Exception as e:
             print(f"Ошибка загрузки VK ID: {e}")
 
+    def _on_proxy_type_changed(self, proxy_name):
+        enabled = proxy_name != 'Без прокси'
+        for widget in (self.proxy_host_input, self.proxy_port_input, self.proxy_username_input, self.proxy_password_input):
+            widget.setEnabled(enabled)
+        if hasattr(self, 'proxy_host_input'):
+            self.proxy_host_input.setPlaceholderText('Адрес прокси, например 127.0.0.1' if enabled else 'Не используется')
+
     def _on_delay_changed(self, value):
         try:
             if hasattr(self, 'delay_value_label') and self.delay_value_label is not None:
@@ -558,6 +609,12 @@ class SetupWindow(BaseWindow):
         platform_choice = self.platform_combo.currentText()
         use_sound = self.sound_checkbox.isChecked()
         screenshot_delay_val = self.delay_slider.value() / 10.0
+        proxy_choice = self.proxy_type_combo.currentText() if hasattr(self, 'proxy_type_combo') else 'Без прокси'
+        proxy_type_val = {'Без прокси': 'none', 'HTTP': 'http', 'SOCKS5': 'socks5'}.get(proxy_choice, 'none')
+        proxy_host_val = self.proxy_host_input.text().strip() if hasattr(self, 'proxy_host_input') else ''
+        proxy_port_val = self.proxy_port_input.text().strip() if hasattr(self, 'proxy_port_input') else ''
+        proxy_username_val = self.proxy_username_input.text().strip() if hasattr(self, 'proxy_username_input') else ''
+        proxy_password_val = self.proxy_password_input.text() if hasattr(self, 'proxy_password_input') else ''
         errors = []
         if not nick:
             errors.append("Никнейм не может быть пустым")
@@ -582,6 +639,16 @@ class SetupWindow(BaseWindow):
                 errors.append("Token Bot должен быть в формате 'число:строка'")
             if not tg_id_val or not tg_id_val.isdigit():
                 errors.append("TG ID должен быть числом")
+            if proxy_type_val != 'none':
+                if not proxy_host_val:
+                    errors.append("Для прокси укажите адрес")
+                if not proxy_port_val.isdigit() or not (1 <= int(proxy_port_val) <= 65535):
+                    errors.append("Порт прокси должен быть числом от 1 до 65535")
+                else:
+                    try:
+                        build_proxy_url(proxy_type_val, proxy_host_val, proxy_port_val, proxy_username_val, proxy_password_val)
+                    except ValueError as exc:
+                        errors.append(str(exc))
         else:
             vk_id_val = self.vk_id_input.text().strip()
             vk_token_val = self.vk_token_input.text().strip()
@@ -621,6 +688,11 @@ class SetupWindow(BaseWindow):
             existing.chat_id = chat_saved
             existing.vk_user_id = vk_saved
             existing.vk_token = vk_token_saved
+            existing.tg_proxy_type = proxy_type_val if platform_choice == 'Telegram' else existing.tg_proxy_type
+            existing.tg_proxy_host = proxy_host_val if platform_choice == 'Telegram' else existing.tg_proxy_host
+            existing.tg_proxy_port = proxy_port_val if platform_choice == 'Telegram' else existing.tg_proxy_port
+            existing.tg_proxy_username = proxy_username_val if platform_choice == 'Telegram' else existing.tg_proxy_username
+            existing.tg_proxy_password = proxy_password_val if platform_choice == 'Telegram' else existing.tg_proxy_password
             save_settings(existing)
 
             self.validation_data = {
@@ -675,17 +747,45 @@ class SetupWindow(BaseWindow):
                 return {"success": True, "message": "Проверка не требуется (VK режим)"}
             if not chat_id_val or not chat_id_val.isdigit():
                 return {"success": False, "message": "TG ID должен содержать только цифры"}
-            import telebot
-            test_bot = telebot.TeleBot(bot_id_val)
-            test_chat_id = int(chat_id_val)
+
+            settings = load_settings()
+            proxy_url = build_proxy_url(
+                settings.tg_proxy_type, settings.tg_proxy_host, settings.tg_proxy_port,
+                settings.tg_proxy_username, settings.tg_proxy_password
+            )
+            proxies = requests_proxies(proxy_url)
+            base = 'https://api.telegram.org'
+            get_me = requests.get(f'{base}/bot{bot_id_val}/getMe', timeout=(5, 15), proxies=proxies)
+            get_me.raise_for_status()
+            payload = get_me.json()
+            if not payload.get('ok'):
+                return {"success": False, "message": "Ошибка: Неверный Token Bot"}
+
             if need_verification_message:
-                test_bot.send_message(test_chat_id, "✅ NeboProject успешно подключен! Настройки корректны.", parse_mode='html')
-            return {"success": True, "message": "Проверка пройдена успешно"}
+                send = requests.post(
+                    f'{base}/bot{bot_id_val}/sendMessage',
+                    data={'chat_id': int(chat_id_val), 'text': '✅ NeboProject успешно подключен! Настройки корректны.', 'parse_mode': 'html'},
+                    timeout=(5, 15), proxies=proxies
+                )
+                send.raise_for_status()
+                send_payload = send.json()
+                if not send_payload.get('ok'):
+                    description = str(send_payload.get('description') or '').lower()
+                    if 'chat not found' in description or 'bad request' in description and 'chat' in description:
+                        return {"success": False, "message": "Ошибка: TG ID не найден или неверный"}
+                    return {"success": False, "message": send_payload.get('description') or 'Telegram API вернул ошибку'}
+            return {"success": True, "message": "Проверка Telegram пройдена успешно"}
+        except requests.exceptions.ConnectTimeout:
+            return {"success": False, "message": "Не удалось подключиться к Telegram API. Проверьте прокси или VPN."}
+        except requests.exceptions.Timeout:
+            return {"success": False, "message": "Telegram API не ответил вовремя. Проверьте прокси или VPN."}
+        except requests.exceptions.ConnectionError:
+            return {"success": False, "message": "Нет соединения с Telegram API. Проверьте прокси или VPN."}
         except Exception as e:
             error_msg = str(e).lower()
             if "chat not found" in error_msg or "invalid chat id" in error_msg:
                 return {"success": False, "message": "Ошибка: TG ID не найден или неверный"}
-            elif "bot token" in error_msg or "invalid token" in error_msg:
+            if "bot token" in error_msg or "invalid token" in error_msg:
                 return {"success": False, "message": "Ошибка: Неверный Token Bot"}
             return {"success": False, "message": f"Ошибка Telegram API: {e}"}
 

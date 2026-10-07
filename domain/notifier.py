@@ -11,6 +11,7 @@ import telebot
 import core.globals as g
 from core.paths import screenshot_path
 from core.settings import load_settings
+from core.telegram_proxy import build_proxy_url, requests_proxies, telebot_proxy
 from domain.events import LABELS, PunishmentType
 from domain.worker_client import send_vk_message
 
@@ -35,7 +36,7 @@ def _telegram_api_url(token: str, method: str) -> str:
     return f'{base}/bot{token}/{method}'
 
 
-def _send_telegram_photo(filename: str, token: str, chat: str, caption: str) -> None:
+def _send_telegram_photo(filename: str, token: str, chat: str, caption: str, proxy_url=None) -> None:
     # requests respects HTTPS_PROXY/HTTP_PROXY from the environment, which also
     # makes the app usable on PCs where direct access to Telegram is blocked.
     with open(filename, 'rb') as photo_file:
@@ -44,6 +45,7 @@ def _send_telegram_photo(filename: str, token: str, chat: str, caption: str) -> 
             data={'chat_id': int(chat), 'caption': caption, 'parse_mode': 'html'},
             files={'photo': (os.path.basename(filename), photo_file, 'image/png')},
             timeout=(10, 45),
+            proxies=requests_proxies(proxy_url),
         )
     response.raise_for_status()
     payload = response.json()
@@ -115,6 +117,12 @@ class TelegramNotifier:
             if should_stop and should_stop():
                 return False, ''
             try:
+                settings = load_settings()
+                proxy_url = build_proxy_url(
+                    settings.tg_proxy_type, settings.tg_proxy_host, settings.tg_proxy_port,
+                    settings.tg_proxy_username, settings.tg_proxy_password
+                )
+                telebot.apihelper.proxy = telebot_proxy(proxy_url)
                 bot = telebot.TeleBot(str(g.bot_id))
                 chat_id = int(payload.user_id)
                 text_main = build_telegram_user_text(payload)
@@ -142,6 +150,10 @@ class TelegramNotifier:
                 _send_telegram_photo(
                     filename, str(bot_token), str(chat),
                     '<em>С любовью, NeboProject</em>',
+                    proxy_url=build_proxy_url(
+                        load_settings().tg_proxy_type, load_settings().tg_proxy_host, load_settings().tg_proxy_port,
+                        load_settings().tg_proxy_username, load_settings().tg_proxy_password
+                    ),
                 )
                 try:
                     os.remove(filename)

@@ -22,12 +22,18 @@ class AppSettings:
     bind_keycode: Optional[int] = None
     verified_bot_id: str = ''
     verified_chat_id: str = ''
+    tg_proxy_type: str = 'none'
+    tg_proxy_host: str = ''
+    tg_proxy_port: str = ''
+    tg_proxy_username: str = ''
+    tg_proxy_password: str = ''
 
 
 _COLUMNS = (
     'nick', 'logs', 'platform', 'bot_id', 'chat_id', 'vk_user_id', 'vk_token',
     'use_sound', 'screenshot_delay', 'log_display_mode', 'theme',
     'bind_keycode', 'verified_bot_id', 'verified_chat_id',
+    'tg_proxy_type', 'tg_proxy_host', 'tg_proxy_port', 'tg_proxy_username', 'tg_proxy_password',
 )
 
 
@@ -58,6 +64,11 @@ def load_settings() -> AppSettings:
         bind_keycode=row['bind_keycode'],
         verified_bot_id=row['verified_bot_id'] or '',
         verified_chat_id=row['verified_chat_id'] or '',
+        tg_proxy_type=row['tg_proxy_type'] if 'tg_proxy_type' in row.keys() else 'none',
+        tg_proxy_host=row['tg_proxy_host'] if 'tg_proxy_host' in row.keys() else '',
+        tg_proxy_port=row['tg_proxy_port'] if 'tg_proxy_port' in row.keys() else '',
+        tg_proxy_username=row['tg_proxy_username'] if 'tg_proxy_username' in row.keys() else '',
+        tg_proxy_password=row['tg_proxy_password'] if 'tg_proxy_password' in row.keys() else '',
     )
 
 
@@ -78,6 +89,11 @@ def save_settings(settings: AppSettings) -> AppSettings:
         settings.bind_keycode,
         settings.verified_bot_id or '',
         settings.verified_chat_id or '',
+        settings.tg_proxy_type or 'none',
+        settings.tg_proxy_host or '',
+        settings.tg_proxy_port or '',
+        settings.tg_proxy_username or '',
+        settings.tg_proxy_password or '',
     )
     assignments = ', '.join(f'{col} = ?' for col in _COLUMNS)
     with connect() as conn:
