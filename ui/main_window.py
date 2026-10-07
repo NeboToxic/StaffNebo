@@ -2,15 +2,13 @@ import os
 import sys
 import subprocess
 import datetime
-import math
 import random
-import time
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTextEdit, QMenu, QAction, QSizePolicy, QFrame, QCheckBox, QSlider, QSystemTrayIcon, QStyle
 )
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QDateTime
-from PyQt5.QtGui import QPainter, QPixmap, QIcon, QColor, QPen, QBrush
+from PyQt5.QtGui import QPainter, QPixmap, QIcon
 
 from ui.title_bar import TitleBar
 from ui.theme_manager import (
@@ -50,7 +48,6 @@ class MainWindow(QWidget):
         self.current_theme = 'Небо'
         self.panel_opacity = max(0, min(100, int(getattr(settings, 'panel_opacity', 78))))
         self.hide_from_taskbar = bool(getattr(settings, 'hide_from_taskbar', False))
-        self.animation_enabled = bool(getattr(settings, 'animation_enabled', True))
         self.setStyleSheet(self._get_theme_stylesheet())
 
         self.ops = OperationQueue(self, processing_delay=1.5)
@@ -75,18 +72,6 @@ class MainWindow(QWidget):
         self._binding_listener_active = False
         self.tray_icon = None
         self.tray_menu = None
-
-        # Плавная фоновая анимация Nebo: красные листья/хлопья.
-        # Движение рассчитывается по реальному dt, поэтому не зависит от FPS.
-        self._fall_particles = []
-        self._particles_last_time = time.monotonic()
-        self._particles_rng = random.Random(1208)
-        self._init_particles(42)
-        self._particles_timer = QTimer(self)
-        self._particles_timer.setInterval(16)  # ~60 FPS
-        self._particles_timer.timeout.connect(self._animate_particles)
-        if self.animation_enabled:
-            self._particles_timer.start()
 
         self._init_ui()
         self._flush_message_buffer()
@@ -169,11 +154,6 @@ class MainWindow(QWidget):
         self.kicks_label.setStyleSheet(stat_base + f"color: {t['error']};")
         self.session_timer_label.setStyleSheet(session_label_style(self.current_theme))
         self.log_output.setStyleSheet(log_output_style(self.current_theme, self.panel_opacity))
-        if hasattr(self, 'animation_checkbox'):
-            self.animation_checkbox.setStyleSheet(
-                f"QCheckBox {{ color: {self.themes[self.current_theme]['text']}; background: transparent; spacing: 5px; font-size: 10px; font-weight: bold; padding: 0 4px; }} "
-                f"QCheckBox::indicator {{ width: 12px; height: 12px; border: 1px solid {self.themes[self.current_theme]['secondary_hover']}; border-radius: 3px; background: transparent; }} "
-                f"QCheckBox::indicator:checked {{ background: {self.themes[self.current_theme]['primary']}; border-color: {self.themes[self.current_theme]['primary']}; }}")
         if hasattr(self, 'status_label'):
             self.status_label.setStyleSheet(f"color: {self.themes[self.current_theme]['accent']}; background: transparent; font-size: 10px; font-weight: bold; padding: 4px 8px;")
         if hasattr(self, 'bind_label'):
@@ -183,29 +163,20 @@ class MainWindow(QWidget):
         self.update()
 
     def _on_panel_opacity_changed(self, value):
-        """Update panel opacity without generating a theme-change log entry."""
+        """Update panel/background opacity live and persist it safely."""
         try:
             self.panel_opacity = max(10, min(100, int(value)))
             if hasattr(self, "opacity_value"):
                 self.opacity_value.setText(f"{self.panel_opacity}%")
+            # Re-apply visual styles without calling _apply_theme(), because that
+            # method intentionally writes a "theme changed" event to the log.
+            # Moving the opacity slider must never flood the event journal.
             self.setStyleSheet(self._get_theme_stylesheet())
             self._update_theme_specific_styles()
+            self._update_log_mode_btn_style()
             update_settings(panel_opacity=self.panel_opacity)
         except Exception as e:
             gui_print(f"[ERROR] Ошибка изменения прозрачности панелей: {e}")
-
-    def _on_animation_toggled(self, state):
-        self.animation_enabled = bool(state)
-        try:
-            update_settings(animation_enabled=self.animation_enabled)
-        except Exception as e:
-            gui_print(f"[ERROR] Не удалось сохранить анимацию: {e}")
-        if self.animation_enabled:
-            self._particles_last_time = time.monotonic()
-            self._particles_timer.start()
-        else:
-            self._particles_timer.stop()
-            self.update()
 
     def _on_tray_mode_changed(self, state):
         """Toggle hiding from taskbar without making startup dependent on tray."""
@@ -251,10 +222,6 @@ class MainWindow(QWidget):
             self._restore_from_tray()
 
     def _restore_from_tray(self):
-        top = self.window()
-        if hasattr(top, "_restore_from_tray") and top is not self:
-            top._restore_from_tray()
-            return
         self.showNormal()
         self.show()
         self.raise_()
@@ -281,12 +248,6 @@ class MainWindow(QWidget):
         self.status_label.setObjectName("statusLabel")
         self.status_label.setAlignment(Qt.AlignCenter)
         self.title_bar.add_widget(self.status_label)
-
-        self.animation_checkbox = QCheckBox("Анимация")
-        self.animation_checkbox.setToolTip("Включить/выключить плавное падение красных листьев")
-        self.animation_checkbox.setChecked(self.animation_enabled)
-        self.animation_checkbox.stateChanged.connect(self._on_animation_toggled)
-        self.title_bar.add_widget(self.animation_checkbox)
 
         self.log_mode_btn = QPushButton()
         self.log_mode_btn.setFixedSize(96, 28)
@@ -455,26 +416,84 @@ class MainWindow(QWidget):
         ql = QVBoxLayout(quote)
         ql.setContentsMargins(16, 16, 16, 16)
         quotes = [
-            "Порядок начинается с маленьких решений.\n\n— Небо",
-            "Не бойся начинать заново.\n\n— Небо",
-            "Тишина тоже умеет говорить.\n\n— Небо",
-            "Сильный не тот, кто не падает, а тот, кто встаёт.\n\n— Небо",
-            "Дисциплина превращает планы в результат.\n\n— Небо",
-            "Каждый день — новый шанс стать лучше.\n\n— Небо",
-            "Спокойствие сильнее суеты.\n\n— Небо",
-            "Сначала порядок вокруг, потом порядок внутри.\n\n— Небо",
-            "Не торопись — делай точно.\n\n— Небо",
-            "Тот, кто держит слово, держит направление.\n\n— Небо",
-            "Маленький шаг всё равно ведёт вперёд.\n\n— Небо",
-            "Характер строится там, где никто не видит.\n\n— Небо",
-            "Будь мягким к людям и строгим к своим решениям.\n\n— Небо",
-            "Стабильность — это тоже сила.\n\n— Небо",
-            "Лучший момент начать — сейчас.\n\n— Небо",
-            "Не ищи лёгкий путь — ищи свой.\n\n— Небо",
-            "Порядок рождается из дисциплины.\n\n— Небо",
-            "Труднее всего победить собственную лень.\n\n— Небо",
-            "Когда есть цель, лишний шум исчезает.\n\n— Небо",
-            "Сделанное сегодня освобождает завтра.\n\n— Небо",
+            "«Порядок рождается из дисциплины.»\n\n— Небо",
+            "«Тишина тоже может быть ответом.»\n\n— Небо",
+            "«Сила — это когда можешь, но выбираешь разум.»\n\n— Небо",
+            "«Не спеши. Точный шаг сильнее быстрых десяти.»\n\n— Небо",
+            "«Каждый хороший результат начинается с одного действия.»\n\n— Небо",
+            "«Держи курс, даже когда город гасит огни.»\n\n— Небо",
+            "«Красный свет — не стоп. Это знак быть внимательнее.»\n\n— Небо",
+            "«Порядок в мелочах создаёт спокойствие в большом.»\n\n— Небо",
+            "«Если начал — доведи до конца.»\n\n— Небо",
+            "«Стабильность важнее красивого старта.»\n\n— Небо",
+            "«Хорошая система не мешает человеку — она помогает ему.»\n\n— Небо",
+            "«Не ищи лёгкий путь. Ищи правильный.»\n\n— Небо",
+            "«Внимание к деталям превращает работу в результат.»\n\n— Небо",
+            "«Ошибку можно исправить. Безразличие — сложнее.»\n\n— Небо",
+            "«Сначала порядок, потом скорость.»\n\n— Небо",
+            "«Настоящая уверенность не требует шума.»\n\n— Небо",
+            "«Будь спокойнее системы, которую контролируешь.»\n\n— Небо",
+            "«Лучший момент улучшить процесс — прямо сейчас.»\n\n— Небо",
+            "«Не количество действий решает, а их точность.»\n\n— Небо",
+            "«Смотри вперёд, но не забывай проверять шаг.»\n\n— Небо",
+            "«Терпение — это скорость, которую не видно сразу.»\n\n— Небо",
+            "«Чёткие правила освобождают голову для важных вещей.»\n\n— Небо",
+            "«Сильный модератор сначала сохраняет спокойствие.»\n\n— Небо",
+            "«Не каждый конфликт требует ответа. Каждый требует контроля.»\n\n— Небо",
+            "«Хаос любит спешку. Порядок любит внимание.»\n\n— Небо",
+            "«Система становится сильнее после каждого исправления.»\n\n— Небо",
+            "«Будь тем, кто замечает проблему до её последствий.»\n\n— Небо",
+            "«Меньше шума. Больше смысла.»\n\n— Небо",
+            "«Хорошая команда начинается с уважения.»\n\n— Небо",
+            "«Не бойся менять то, что можно сделать лучше.»\n\n— Небо",
+            "«Дисциплина — это забота о результате.»\n\n— Небо",
+            "«Пауза иногда полезнее мгновенного ответа.»\n\n— Небо",
+            "«Проверяй факты, прежде чем делать вывод.»\n\n— Небо",
+            "«Справедливость начинается с одинаковых правил для всех.»\n\n— Небо",
+            "«Сильная система должна быть понятной.»\n\n— Небо",
+            "«Если процесс повторяется — его можно улучшить.»\n\n— Небо",
+            "«Не усложняй там, где достаточно точности.»\n\n— Небо",
+            "«Каждый лог — это история, которую стоит уметь читать.»\n\n— Небо",
+            "«Спокойствие — лучший инструмент в напряжённый момент.»\n\n— Небо",
+            "«Сначала слушай. Потом решай.»\n\n— Небо",
+            "«Хорошее решение выдерживает повторную проверку.»\n\n— Небо",
+            "«Порядок — это не строгость. Это предсказуемость.»\n\n— Небо",
+            "«Будь внимателен к мелочам — они редко случайны.»\n\n— Небо",
+            "«Не позволяй одному моменту испортить весь процесс.»\n\n— Небо",
+            "«Сначала разберись, потом действуй.»\n\n— Небо",
+            "«Контроль — это не давление, а ответственность.»\n\n— Небо",
+            "«Чем чище процесс, тем меньше лишних вопросов.»\n\n— Небо",
+            "«Пусть интерфейс помогает, а не отвлекает.»\n\n— Небо",
+            "«Надёжность строится из маленьких проверенных решений.»\n\n— Небо",
+            "«Красивый результат начинается с аккуратной основы.»\n\n— Небо",
+            "«Не торопись исправлять то, что ещё не понял.»\n\n— Небо",
+            "«Уважение к правилам — уважение к другим.»\n\n— Небо",
+            "«Хорошая работа заметна даже тогда, когда о ней молчат.»\n\n— Небо",
+            "«Будь последовательным — это сильнее случайного успеха.»\n\n— Небо",
+            "«Если всё под контролем, оставь системе пространство для работы.»\n\n— Небо",
+            "«Не бойся тишины после правильного решения.»\n\n— Небо",
+            "«Каждый день можно сделать систему немного лучше.»\n\n— Небо",
+            "«Стабильность — тоже достижение.»\n\n— Небо",
+            "«Делай аккуратно, чтобы потом не делать дважды.»\n\n— Небо",
+            "«Точность — самый тихий вид силы.»\n\n— Небо",
+            "«Небо любит порядок, а порядок любит внимание.»\n\n— Небо",
+            "«Не теряй голову там, где достаточно одного спокойного решения.»\n\n— Небо",
+            "«Пусть каждое действие имеет причину.»\n\n— Небо",
+            "«Хороший контроль начинается с хорошего наблюдения.»\n\n— Небо",
+            "«Сильная система не боится проверок.»\n\n— Небо",
+            "«Порядок начинается там, где заканчивается случайность.»\n\n— Небо",
+            "«Держи качество даже тогда, когда никто не смотрит.»\n\n— Небо",
+            "«Важные решения любят холодную голову.»\n\n— Небо",
+            "«Лучше один точный вывод, чем десять быстрых предположений.»\n\n— Небо",
+            "«Сначала стабильность. Потом скорость. Потом красота.»\n\n— Небо",
+            "«Не всё нужно исправлять сразу — выбирай главное.»\n\n— Небо",
+            "«Пусть сегодняшний порядок станет завтрашней привычкой.»\n\n— Небо",
+            "«Если можешь сделать проще — сделай проще.»\n\n— Небо",
+            "«Ответственность видна не в словах, а в действиях.»\n\n— Небо",
+            "«Каждая система начинается с человека, который решил сделать её лучше.»\n\n— Небо",
+            "«Не теряй цель за количеством уведомлений.»\n\n— Небо",
+            "«Хороший порядок не давит — он освобождает.»\n\n— Небо",
+            "«Будь внимателен, будь спокоен, будь точен.»\n\n— Небо",
         ]
         q = QLabel(random.choice(quotes))
         q.setObjectName("quoteText")
@@ -486,77 +505,16 @@ class MainWindow(QWidget):
         main_layout.addWidget(body, 1)
         self._update_log_mode_btn_style()
 
-    def _init_particles(self, count=42):
-        self._fall_particles.clear()
-        for _ in range(count):
-            self._fall_particles.append(self._new_particle(initial=True))
-
-    def _new_particle(self, initial=False):
-        w = max(1, self.width())
-        h = max(1, self.height())
-        rng = self._particles_rng
-        return {
-            'x': rng.uniform(-20, w + 20),
-            'y': rng.uniform(-20, h) if initial else rng.uniform(-70, -10),
-            'speed': rng.uniform(22.0, 58.0),
-            'drift': rng.uniform(5.0, 18.0),
-            'phase': rng.uniform(0.0, math.tau),
-            'size': rng.uniform(2.2, 5.5),
-            'rotation': rng.uniform(0.0, math.tau),
-            'rotation_speed': rng.uniform(-1.8, 1.8),
-            'alpha': rng.randint(45, 125),
-            'leaf': rng.random() < 0.72,
-        }
-
-    def _animate_particles(self):
-        now = time.monotonic()
-        dt = min(0.035, max(0.001, now - self._particles_last_time))
-        self._particles_last_time = now
-        w = self.width()
-        h = self.height()
-        for p in self._fall_particles:
-            p['y'] += p['speed'] * dt
-            p['phase'] += dt * 1.25
-            p['x'] += math.sin(p['phase']) * p['drift'] * dt
-            p['rotation'] += p['rotation_speed'] * dt
-            if p['y'] > h + 20 or p['x'] < -40 or p['x'] > w + 40:
-                np = self._new_particle(False)
-                # Возвращаем частицы преимущественно в верхнюю часть, без резкого
-                # появления в середине окна.
-                np['x'] = self._particles_rng.uniform(0, max(1, w))
-                p.update(np)
-        self.update()
-
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
-        painter.setRenderHint(QPainter.Antialiasing, True)
         pixmap = getattr(self, '_nebo_bg_pixmap', None)
         if pixmap is None:
             pixmap = QPixmap(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'path', 'nebo_red_bg.png'))
             self._nebo_bg_pixmap = pixmap
         if not pixmap.isNull():
             painter.drawPixmap(self.rect(), pixmap)
-
-        # Анимация рисуется после фона, но до super().paintEvent(), поэтому
-        # карточки/кнопки остаются поверх неё и частицы не перехватывают мышь.
-        painter.save()
-        for p in self._fall_particles:
-            painter.save()
-            painter.translate(p['x'], p['y'])
-            painter.rotate(math.degrees(p['rotation']))
-            c = QColor(255, 28, 52, p['alpha'])
-            painter.setPen(Qt.NoPen)
-            painter.setBrush(QBrush(c))
-            s = p['size']
-            if p['leaf']:
-                painter.drawEllipse(-s * 0.65, -s * 0.28, s * 1.3, s * 0.56)
-                painter.setPen(QPen(QColor(255, 105, 120, max(25, p['alpha'] // 2)), 0.7))
-                painter.drawLine(-s * 0.5, 0, s * 0.5, 0)
-            else:
-                painter.drawEllipse(-s / 2, -s / 2, s, s)
-            painter.restore()
-        painter.restore()
+            painter.fillRect(self.rect(), Qt.black if False else Qt.transparent)
         super().paintEvent(event)
 
     def setup_initial_display(self):

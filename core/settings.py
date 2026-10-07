@@ -31,8 +31,6 @@ class AppSettings:
     panel_opacity: int = 78
     hide_from_taskbar: bool = False
     startup_windows: bool = False
-    startup_cristalix: bool = False
-    animation_enabled: bool = True
 
 
 _COLUMNS = (
@@ -40,7 +38,7 @@ _COLUMNS = (
     'use_sound', 'screenshot_delay', 'log_display_mode', 'theme',
     'bind_keycode', 'bind_key', 'verified_bot_id', 'verified_chat_id',
     'tg_proxy_type', 'tg_proxy_host', 'tg_proxy_port', 'tg_proxy_username', 'tg_proxy_password',
-    'panel_opacity', 'hide_from_taskbar', 'startup_windows', 'startup_cristalix', 'animation_enabled',
+    'panel_opacity', 'hide_from_taskbar', 'startup_windows',
 )
 
 
@@ -80,8 +78,6 @@ def load_settings() -> AppSettings:
         panel_opacity=int(row['panel_opacity'] if 'panel_opacity' in row.keys() and row['panel_opacity'] is not None else 78),
         hide_from_taskbar=bool(row['hide_from_taskbar']) if 'hide_from_taskbar' in row.keys() else False,
         startup_windows=bool(row['startup_windows']) if 'startup_windows' in row.keys() else False,
-        startup_cristalix=bool(row['startup_cristalix']) if 'startup_cristalix' in row.keys() else False,
-        animation_enabled=bool(row['animation_enabled']) if 'animation_enabled' in row.keys() else True,
     )
 
 
@@ -111,8 +107,6 @@ def save_settings(settings: AppSettings) -> AppSettings:
         max(0, min(100, int(settings.panel_opacity))),
         1 if settings.hide_from_taskbar else 0,
         1 if settings.startup_windows else 0,
-        1 if settings.startup_cristalix else 0,
-        1 if settings.animation_enabled else 0,
     )
     assignments = ', '.join(f'{col} = ?' for col in _COLUMNS)
     with connect() as conn:

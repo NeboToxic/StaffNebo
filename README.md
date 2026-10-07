@@ -1,10 +1,10 @@
-# NeboProject 1.2.7
+# NeboProject
 
-Исправление отзывчивости окна настройки.
+Персональная версия утилиты для модерации: мониторинг latest.log, автоматические скриншоты и отправка уведомлений напрямую в Telegram или VK API.
 
-Изменения:
-- системный трей и изменение taskbar больше не инициализируются в окне настройки;
-- убран фоновый таймер восстановления трея из SetupWindow;
-- переключение Telegram/VK больше не делает синхронное чтение SQLite при каждом клике;
-- трей создаётся только после открытия основного окна;
-- сохранены функции 1.2.6.
+Приложение не использует исходный GitHub-проект, Cloudflare Worker или встроенный секрет стороннего проекта.
+
+Данные хранятся в `%APPDATA%\\NeboProject\\neboproject.db`, скриншоты — в `screenshots`.
+
+### Telegram proxy
+NeboProject supports per-application Telegram HTTP and SOCKS5 proxies. Configure them in the setup window under «Прокси». For SOCKS5, the build installs PySocks through `requests[socks]`.

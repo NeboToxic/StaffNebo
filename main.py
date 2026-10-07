@@ -5,27 +5,6 @@ from PyQt5.QtCore import QMetaType
 from PyQt5.QtGui import QTextCursor, QIcon
 
 from config import check_config
-
-
-def _run_cristalix_watcher():
-    import subprocess, time
-    target = "Cristalix.exe"
-    def running():
-        try:
-            out = subprocess.run(["tasklist", "/FI", f"IMAGENAME eq {target}"], capture_output=True, text=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-            return target.lower() in out.stdout.lower()
-        except Exception:
-            return False
-    while not running():
-        time.sleep(2.0)
-    time.sleep(1.0)
-    try:
-        if getattr(sys, "frozen", False):
-            subprocess.Popen([sys.executable], close_fds=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        else:
-            subprocess.Popen([sys.executable, os.path.abspath(__file__)], close_fds=True)
-    except Exception:
-        pass
 from core.paths import ensure_data_dir, resource_path
 from core.helpers import cleanup, init_local_storage
 import core.globals as g
@@ -33,9 +12,6 @@ from ui.setup_window import SetupWindow
 
 
 if __name__ == "__main__":
-    if "--cristalix-watch" in sys.argv:
-        _run_cristalix_watcher()
-        sys.exit(0)
     try:
         ensure_data_dir()
 

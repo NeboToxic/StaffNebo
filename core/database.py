@@ -69,8 +69,6 @@ def init_schema():
             ('panel_opacity', "INTEGER NOT NULL DEFAULT 78"),
             ('hide_from_taskbar', "INTEGER NOT NULL DEFAULT 0"),
             ('startup_windows', "INTEGER NOT NULL DEFAULT 0"),
-            ('startup_cristalix', "INTEGER NOT NULL DEFAULT 0"),
-            ('animation_enabled', "INTEGER NOT NULL DEFAULT 1"),
         ):
             try:
                 conn.execute(f"ALTER TABLE settings ADD COLUMN {column} {definition}")
