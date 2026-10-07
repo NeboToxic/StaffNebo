@@ -201,7 +201,8 @@ class VkNotifier:
         return False, f"[ERROR] Не удалось отправить {meta['fail_vk']}"
 
     def send_screenshot(self, filename: str, vk_user_id: str = '', should_stop=None) -> tuple:
-        for attempt in range(1, 4):
+        random_id = int(tm.time() * 1000)
+        for attempt in range(1, 3):
             if should_stop and should_stop():
                 return False, ''
             try:
@@ -209,6 +210,7 @@ class VkNotifier:
                     load_settings().vk_token, self._peer_id(vk_user_id),
                     '📸 Скриншот по запросу\nЛюбишь небо?',
                     filename,
+                    random_id=random_id,
                 )
                 try:
                     os.remove(filename)
@@ -216,11 +218,8 @@ class VkNotifier:
                     pass
                 return True, '[SYSTEM] Скриншот отправлен во ВКонтакте'
             except Exception as e:
-                if attempt == 3:
-                    try:
-                        os.remove(filename)
-                    except Exception:
-                        pass
+                if attempt == 2:
+                    # Keep the screenshot on disk if VK is unavailable.
                     return False, f'[ERROR] Не удалось отправить скриншот во ВКонтакте: {e}'
-                tm.sleep(2)
+                tm.sleep(1)
         return False, '[ERROR] Не удалось отправить скриншот во ВКонтакте'
