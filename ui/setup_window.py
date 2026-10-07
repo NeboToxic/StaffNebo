@@ -65,7 +65,6 @@ class SetupWindow(BaseWindow):
         self._update_theme_specific_styles()
         self._load_verification_info()
         QTimer.singleShot(100, lambda: self._on_platform_changed(self.platform_combo.currentText()))
-        QTimer.singleShot(350, self._ensure_saved_tray)
 
     def _setup_tray(self):
         if self.tray_icon is not None:
@@ -430,8 +429,6 @@ class SetupWindow(BaseWindow):
             self.telegram_widget.setVisible(False)
             self.vk_widget.setVisible(True)
             self._load_vk_id()
-        from PyQt5.QtWidgets import QApplication
-        QApplication.processEvents()
 
     def _create_setup_screen(self):
         screen = QWidget()
@@ -667,8 +664,6 @@ class SetupWindow(BaseWindow):
         self.telegram_widget.updateGeometry()
         self.vk_widget.updateGeometry()
         self.vk_id_input.updateGeometry()
-        from PyQt5.QtWidgets import QApplication
-        QApplication.processEvents()
 
     def _load_telegram_settings(self):
         try:
@@ -821,7 +816,7 @@ class SetupWindow(BaseWindow):
                 'vk_token': vk_token_saved,
             }
             self.stacked_widget.setCurrentWidget(self.loading_screen)
-            self._start_validation()
+            QTimer.singleShot(0, self._start_validation)
         except Exception as e:
             self.confirm_btn.setEnabled(True)
             traceback.print_exc()
