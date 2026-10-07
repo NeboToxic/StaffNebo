@@ -4,9 +4,10 @@ import subprocess
 import datetime
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QTextEdit, QMenu, QAction, QSizePolicy
+    QTextEdit, QMenu, QAction, QSizePolicy, QFrame
 )
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QDateTime
+from PyQt5.QtGui import QPainter, QPixmap
 
 from ui.title_bar import TitleBar
 from ui.theme_manager import (
@@ -34,6 +35,7 @@ class MainWindow(QWidget):
     """Main panel content; lives inside the app shell stacked pages."""
 
     sound_requested = pyqtSignal()
+    bind_captured = pyqtSignal(object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -62,12 +64,14 @@ class MainWindow(QWidget):
         self._screenshot_busy = False
         self._hotkey_held = False
         self._hotkey_shot_armed = True
+        self._binding_listener_active = False
 
         self._init_ui()
         self._flush_message_buffer()
 
         self.sound_requested.connect(self._play_sound)
 
+        self.bind_captured.connect(self._on_bind_captured)
         self._load_bind()
         self._apply_theme(self.current_theme)
         self._load_platform()
@@ -147,8 +151,7 @@ class MainWindow(QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        # Верхняя панель окна
-        self.title_bar = TitleBar(f"{APP_NAME}  •  v{VERSION}", self)
+        self.title_bar = TitleBar(f"Небо  •  NeboProject  •  v{VERSION}", self)
         self.title_label = self.title_bar.title_label
 
         self.status_label = QLabel("●  ОНЛАЙН")
@@ -163,7 +166,7 @@ class MainWindow(QWidget):
         self.title_bar.add_widget(self.log_mode_btn)
 
         self.theme_btn = QPushButton("Темы")
-        self.theme_btn.setFixedSize(72, 28)
+        self.theme_btn.setFixedSize(100, 28)
         self.theme_btn.setToolTip("Сменить тему")
         self.theme_btn.clicked.connect(self._show_theme_menu)
         self.title_bar.add_widget(self.theme_btn)
@@ -175,41 +178,41 @@ class MainWindow(QWidget):
 
         body = QWidget()
         body_layout = QHBoxLayout(body)
-        body_layout.setContentsMargins(18, 14, 18, 18)
-        body_layout.setSpacing(0)
+        body_layout.setContentsMargins(22, 14, 22, 20)
+        body_layout.setSpacing(18)
 
-        # Основная область
         content = QWidget()
         content.setObjectName("contentArea")
         content_layout = QVBoxLayout(content)
         content_layout.setContentsMargins(0, 0, 0, 0)
-        content_layout.setSpacing(14)
+        content_layout.setSpacing(12)
 
-        header_row = QHBoxLayout()
+        hero = QHBoxLayout()
+        hero.setSpacing(12)
+        hero_title_box = QVBoxLayout()
+        hero_title_box.setSpacing(2)
         header = QLabel("Панель управления")
         header.setObjectName("pageTitle")
-        header_row.addWidget(header)
-        header_row.addStretch()
-        project_badge = QLabel("NEBO PROJECT")
-        project_badge.setObjectName("projectBadge")
-        project_badge.setAlignment(Qt.AlignCenter)
-        header_row.addWidget(project_badge)
-        self.session_timer_label = QLabel("Сессия 00:00")
-        self.session_timer_label.setObjectName("sessionCard")
-        self.session_timer_label.setAlignment(Qt.AlignCenter)
-        header_row.addWidget(self.session_timer_label)
-        content_layout.addLayout(header_row)
-
+        hero_title_box.addWidget(header)
         subtitle = QLabel("Автоматический контроль действий модератора и обработка latest.log")
         subtitle.setObjectName("pageSubtitle")
-        content_layout.addWidget(subtitle)
+        hero_title_box.addWidget(subtitle)
+        hero.addLayout(hero_title_box, 1)
+        project_badge = QLabel("Н Е Б О   P R O J E C T")
+        project_badge.setObjectName("projectBadge")
+        project_badge.setAlignment(Qt.AlignCenter)
+        hero.addWidget(project_badge)
+        self.session_timer_label = QLabel("Сессия: 00:00")
+        self.session_timer_label.setObjectName("sessionCard")
+        self.session_timer_label.setAlignment(Qt.AlignCenter)
+        hero.addWidget(self.session_timer_label)
+        content_layout.addLayout(hero)
 
-        # Карточки статистики
         stats_row = QHBoxLayout()
-        stats_row.setSpacing(10)
-        self.mutes_label = QLabel("МУТЫ\n0")
-        self.warns_label = QLabel("ВАРНЫ\n0")
-        self.kicks_label = QLabel("КИКИ\n0")
+        stats_row.setSpacing(12)
+        self.mutes_label = QLabel("◉  МУТЫ\n0")
+        self.warns_label = QLabel("⚠  ВАРНЫ\n0")
+        self.kicks_label = QLabel("➜  КИКИ\n0")
         self.mutes_label.setObjectName("statMutes")
         self.warns_label.setObjectName("statWarns")
         self.kicks_label.setObjectName("statKicks")
@@ -219,7 +222,7 @@ class MainWindow(QWidget):
         content_layout.addLayout(stats_row)
 
         log_header = QHBoxLayout()
-        log_title = QLabel("Журнал событий")
+        log_title = QLabel("⌁  Журнал событий")
         log_title.setObjectName("sectionTitle")
         log_header.addWidget(log_title)
         log_header.addStretch()
@@ -241,43 +244,110 @@ class MainWindow(QWidget):
         bottom.setSpacing(8)
         self.bind_btn = QPushButton("⌨  Изменить бинд")
         self.bind_btn.setObjectName("primaryButton")
-        self.bind_btn.setFixedHeight(38)
+        self.bind_btn.setFixedHeight(40)
         self.bind_btn.clicked.connect(self._start_binding)
         bottom.addWidget(self.bind_btn)
 
-        # Текущий бинд — отдельная подпись. Ранее этот виджет был удалён
-        # вместе с левой панелью, но логика загрузки/изменения бинда
-        # продолжала обращаться к self.bind_label.
         self.bind_label = QLabel("Текущий бинд: Не задан")
         self.bind_label.setObjectName("bindLabel")
         self.bind_label.setAlignment(Qt.AlignCenter)
         self.bind_label.setMinimumWidth(190)
-        self.bind_label.setStyleSheet(bind_label_style(self.current_theme))
         bottom.addWidget(self.bind_label)
 
         shot_btn = QPushButton("▣  Сделать скриншот")
         shot_btn.setObjectName("secondaryButton")
-        shot_btn.setFixedHeight(38)
+        shot_btn.setFixedHeight(40)
         shot_btn.clicked.connect(self.take_screenshot)
         bottom.addWidget(shot_btn)
-        bottom.addStretch()
-
         content_layout.addLayout(bottom)
         body_layout.addWidget(content, 1)
-        main_layout.addWidget(body, 1)
 
-        self.allowed_keys = (
-            list(range(Qt.Key_A, Qt.Key_Z + 1)) + list(range(Qt.Key_0, Qt.Key_9 + 1)) + list(range(Qt.Key_F1, Qt.Key_F24 + 1)) +
-            [Qt.Key_Insert, Qt.Key_Delete, Qt.Key_Home, Qt.Key_End, Qt.Key_PageUp, Qt.Key_PageDown, Qt.Key_Print, Qt.Key_Pause,
-             Qt.Key_Escape, Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down, Qt.Key_Shift, Qt.Key_Control, Qt.Key_Alt,
-             Qt.Key_Meta, Qt.Key_AltGr, Qt.Key_Space, Qt.Key_Return, Qt.Key_Enter, Qt.Key_Tab, Qt.Key_Backspace,
-             Qt.Key_CapsLock, Qt.Key_NumLock, Qt.Key_ScrollLock, Qt.Key_Menu, Qt.Key_Backtab, Qt.Key_QuoteLeft,
-             Qt.Key_Backslash, Qt.Key_BracketLeft, Qt.Key_BracketRight, Qt.Key_Semicolon, Qt.Key_Apostrophe, Qt.Key_Comma,
-             Qt.Key_Period, Qt.Key_Slash, Qt.Key_Equal, Qt.Key_Minus, Qt.Key_AsciiTilde, Qt.Key_Exclam, Qt.Key_At,
-             Qt.Key_NumberSign, Qt.Key_Dollar, Qt.Key_Percent, Qt.Key_Ampersand, Qt.Key_Asterisk, Qt.Key_Plus, Qt.Key_Less,
-             Qt.Key_Greater, Qt.Key_Underscore, Qt.Key_Question, Qt.Key_ParenLeft, Qt.Key_ParenRight]
-        )
+        # Правая панель в стиле референса: статус, часы, быстрые действия, статистика и цитата.
+        sidebar = QFrame()
+        sidebar.setObjectName("sidePanel")
+        sidebar.setMinimumWidth(270)
+        sidebar.setMaximumWidth(315)
+        side_layout = QVBoxLayout(sidebar)
+        side_layout.setContentsMargins(0, 0, 0, 0)
+        side_layout.setSpacing(12)
+
+        status_card = QFrame()
+        status_card.setObjectName("sideCard")
+        status_layout = QVBoxLayout(status_card)
+        status_layout.setContentsMargins(16, 14, 16, 14)
+        online = QLabel("●  ОНЛАЙН")
+        online.setObjectName("onlineTitle")
+        status_layout.addWidget(online)
+        status_text = QLabel("Подключение активно")
+        status_text.setObjectName("mutedText")
+        status_layout.addWidget(status_text)
+        self.clock_label = QLabel(QDateTime.currentDateTime().toString("dd.MM.yyyy\nHH:mm"))
+        self.clock_label.setObjectName("bigClock")
+        status_layout.addWidget(self.clock_label)
+        self.clock_day_label = QLabel(QDateTime.currentDateTime().toString("dddd").capitalize())
+        self.clock_day_label.setObjectName("mutedText")
+        status_layout.addWidget(self.clock_day_label)
+        side_layout.addWidget(status_card)
+
+        quick_card = QFrame()
+        quick_card.setObjectName("sideCard")
+        quick_layout = QVBoxLayout(quick_card)
+        quick_layout.setContentsMargins(14, 14, 14, 14)
+        quick_title = QLabel("Быстрые действия")
+        quick_title.setObjectName("sideTitle")
+        quick_layout.addWidget(quick_title)
+        quick_bind = QPushButton("⌨  Изменить бинд")
+        quick_bind.setObjectName("primaryButton")
+        quick_bind.setFixedHeight(42)
+        quick_bind.clicked.connect(self._start_binding)
+        quick_layout.addWidget(quick_bind)
+        quick_shot = QPushButton("▣  Сделать скриншот")
+        quick_shot.setObjectName("secondaryButton")
+        quick_shot.setFixedHeight(42)
+        quick_shot.clicked.connect(self.take_screenshot)
+        quick_layout.addWidget(quick_shot)
+        side_layout.addWidget(quick_card)
+
+        day_card = QFrame()
+        day_card.setObjectName("sideCard")
+        day_layout = QVBoxLayout(day_card)
+        day_layout.setContentsMargins(14, 14, 14, 14)
+        day_title = QLabel("Статистика за день")
+        day_title.setObjectName("sideTitle")
+        day_layout.addWidget(day_title)
+        self.day_mutes = QLabel("◉   Муты                                      0")
+        self.day_warns = QLabel("⚠   Варны                                     0")
+        self.day_kicks = QLabel("➜   Кики                                      0")
+        for w in (self.day_mutes, self.day_warns, self.day_kicks):
+            w.setObjectName("sideStat")
+            day_layout.addWidget(w)
+        side_layout.addWidget(day_card)
+
+        quote = QFrame()
+        quote.setObjectName("quoteCard")
+        ql = QVBoxLayout(quote)
+        ql.setContentsMargins(16, 16, 16, 16)
+        q = QLabel("«Порядок рождается\nиз дисциплины.»\n\n— Небо")
+        q.setObjectName("quoteText")
+        ql.addWidget(q)
+        side_layout.addWidget(quote)
+        side_layout.addStretch(1)
+
+        body_layout.addWidget(sidebar)
+        main_layout.addWidget(body, 1)
         self._update_log_mode_btn_style()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+        pixmap = getattr(self, '_nebo_bg_pixmap', None)
+        if pixmap is None:
+            pixmap = QPixmap(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'path', 'nebo_red_bg.png'))
+            self._nebo_bg_pixmap = pixmap
+        if not pixmap.isNull():
+            painter.drawPixmap(self.rect(), pixmap)
+            painter.fillRect(self.rect(), Qt.black if False else Qt.transparent)
+        super().paintEvent(event)
 
     def setup_initial_display(self):
         global log_display_mode
@@ -292,9 +362,13 @@ class MainWindow(QWidget):
         gui_messages_buffer.clear()
 
     def update_stats(self):
-        self.mutes_label.setText(f"МУТЫ\n{all_mutes}")
-        self.warns_label.setText(f"ВАРНЫ\n{all_warns}")
-        self.kicks_label.setText(f"КИКИ\n{all_kicks}")
+        self.mutes_label.setText(f"◉  МУТЫ\n{all_mutes}")
+        self.warns_label.setText(f"⚠  ВАРНЫ\n{all_warns}")
+        self.kicks_label.setText(f"➜  КИКИ\n{all_kicks}")
+        if hasattr(self, 'day_mutes'):
+            self.day_mutes.setText(f"◉   Муты                                      {all_mutes}")
+            self.day_warns.setText(f"⚠   Варны                                     {all_warns}")
+            self.day_kicks.setText(f"➜   Кики                                      {all_kicks}")
 
     def _update_session_timer(self):
         elapsed = datetime.datetime.now() - self.session_start_time
@@ -307,6 +381,10 @@ class MainWindow(QWidget):
             self.session_timer_label.setText(f"Сессия: {h:02d}:{m:02d}:{s:02d}")
         else:
             self.session_timer_label.setText(f"Сессия: {m:02d}:{s:02d}")
+        if hasattr(self, 'clock_label'):
+            now = QDateTime.currentDateTime()
+            self.clock_label.setText(now.toString("dd.MM.yyyy\nHH:mm"))
+            self.clock_day_label.setText(now.toString("dddd").capitalize())
 
     def _clear_logs(self):
         self.log_output.clear()
@@ -459,90 +537,98 @@ class MainWindow(QWidget):
         self.log_message(message)
 
     def _start_binding(self):
+        """Enter global key-capture mode.
+
+        Binding is captured with pynput rather than Qt key events. This makes
+        the bind independent of the current keyboard layout and lets us
+        distinguish physical left/right modifier keys (Alt/Ctrl/Shift/Win),
+        CapsLock, media keys and other keys exposed by Windows.
+        """
+        if self.setting_bind_mode:
+            return
+        self.setting_bind_mode = True
+        self.bind_btn.setText("Нажмите любую клавишу...")
+        self.bind_btn.setEnabled(False)
+        gui_print("[SYSTEM] Режим привязки: нажмите любую клавишу")
+        self._ensure_keyboard_listener()
+
+    def _on_bind_captured(self, key):
         if not self.setting_bind_mode:
-            self.setting_bind_mode = True
-            self.bind_btn.setText("Нажмите клавишу...")
-            self.bind_btn.setEnabled(False)
-            self.grabKeyboard()
-            gui_print("[SYSTEM] Режим привязки: нажмите любую клавишу")
+            return
+        try:
+            descriptor = self._serialize_pynput_key(key)
+            if not descriptor:
+                gui_print("[ERROR] Не удалось определить нажатую клавишу")
+                return
+
+            self.current_bind_keycode = self._legacy_qt_key_from_pynput(key)
+            key_name = self._pynput_key_name(key)
+            update_settings(
+                bind_keycode=self.current_bind_keycode,
+                bind_key=descriptor,
+            )
+            self.bind_label.setText(f"Текущий бинд: {key_name}")
+            gui_print(f"[SYSTEM] Бинд установлен: {key_name}")
+        except Exception as e:
+            gui_print(f"[ERROR] Ошибка сохранения бинда: {e}")
+        finally:
+            self.setting_bind_mode = False
+            self.bind_btn.setText("Изменить бинд")
+            self.bind_btn.setEnabled(True)
+            self._hotkey_held = True
+            self._hotkey_shot_armed = False
 
     def keyPressEvent(self, event):
-        if self.setting_bind_mode:
-            key = event.key()
-            if key in [Qt.Key_Shift, Qt.Key_Control, Qt.Key_Alt, Qt.Key_Meta, Qt.Key_CapsLock, Qt.Key_NumLock, Qt.Key_ScrollLock]:
-                event.accept()
-                return
-            if key in self.allowed_keys:
-                self.current_bind_keycode = key
-                key_name = self._get_key_name(key)
-                try:
-                    update_settings(bind_keycode=int(key))
-                except Exception as e:
-                    gui_print(f"[ERROR] Ошибка сохранения бинда: {e}")
-                self.bind_label.setText(f"Текущий бинд: {key_name}")
-                gui_print(f"[SYSTEM] Бинд установлен: {key_name}")
-            self.setting_bind_mode = False
-            self.bind_btn.setText("Изменить бинд скриншота")
-            self.bind_btn.setEnabled(True)
-            self.releaseKeyboard()
-            self._setup_global_shortcut()
-            event.accept()
-        else:
-            super().keyPressEvent(event)
+        # Global pynput listener handles binding so keyboard layout does not
+        # affect the result. Keep normal Qt handling for all other keys.
+        super().keyPressEvent(event)
 
     def _load_bind(self):
         try:
-            saved_key = load_settings().bind_keycode
+            settings = load_settings()
+            if settings.bind_key:
+                self.current_bind_keycode = settings.bind_keycode
+                name = self._descriptor_name(settings.bind_key)
+                self.bind_label.setText(f"Текущий бинд: {name}")
+                self._setup_global_shortcut()
+                return
+
+            # Backward compatibility with versions that stored only Qt keycode.
+            saved_key = settings.bind_keycode
             if saved_key is None:
                 self.bind_label.setText("Текущий бинд: Не задан")
+                self._setup_global_shortcut()
                 return
+
             self.current_bind_keycode = int(saved_key)
-            self.bind_label.setText(f"Текущий бинд: {self._get_key_name(self.current_bind_keycode)}")
+            pynput_key = self._qt_key_to_pynput(self.current_bind_keycode)
+            if pynput_key is not None:
+                descriptor = self._serialize_pynput_key(pynput_key)
+                update_settings(bind_key=descriptor)
+                name = self._pynput_key_name(pynput_key)
+            else:
+                name = self._get_key_name(self.current_bind_keycode)
+            self.bind_label.setText(f"Текущий бинд: {name}")
             self._setup_global_shortcut()
         except Exception as e:
             self.bind_label.setText("Текущий бинд: Ошибка загрузки")
             gui_print(f"[ERROR] Ошибка загрузки бинда: {e}")
 
-    def _setup_global_shortcut(self):
+    def _ensure_keyboard_listener(self):
+        """Start one global listener used for both binding and hotkey firing."""
         import pynput.keyboard as pynput_kb
         try:
             if self.keyboard_listener is not None:
-                try:
-                    self.keyboard_listener.stop()
-                except Exception:
-                    pass
-                self.keyboard_listener = None
-
-            self._hotkey_held = False
-            self._hotkey_shot_armed = True
-
-            if self.current_bind_keycode is None:
+                # Listener is already running in normal mode.
                 return
-
-            pynput_key = self._qt_key_to_pynput(self.current_bind_keycode)
-            if not pynput_key:
-                return
-
-            def _keys_match(key) -> bool:
-                try:
-                    if key == pynput_key:
-                        return True
-                    # Windows may emit both KeyCode(char=...) and vk variants.
-                    if hasattr(key, 'vk') and hasattr(pynput_key, 'vk'):
-                        if key.vk is not None and key.vk == pynput_key.vk:
-                            return True
-                    if hasattr(key, 'char') and hasattr(pynput_key, 'char'):
-                        if key.char and pynput_key.char and key.char.lower() == pynput_key.char.lower():
-                            return True
-                except Exception:
-                    return False
-                return False
 
             def on_press(key):
                 try:
-                    if not _keys_match(key):
+                    if self.setting_bind_mode:
+                        self.bind_captured.emit(key)
                         return
-                    # Key-repeat while held must not queue more screenshots.
+                    if not self._key_matches_saved(key):
+                        return
                     if self._hotkey_held or not self._hotkey_shot_armed:
                         return
                     self._hotkey_held = True
@@ -553,7 +639,9 @@ class MainWindow(QWidget):
 
             def on_release(key):
                 try:
-                    if _keys_match(key):
+                    if self.setting_bind_mode:
+                        return
+                    if self._key_matches_saved(key):
                         self._hotkey_held = False
                         self._hotkey_shot_armed = True
                 except Exception:
@@ -566,11 +654,144 @@ class MainWindow(QWidget):
             )
             self.keyboard_listener.start()
         except Exception as e:
-            gui_print(f"[ERROR] Ошибка настройки горячей клавиши: {e}")
+            gui_print(f"[ERROR] Ошибка запуска клавиатурного слушателя: {e}")
+
+    def _setup_global_shortcut(self):
+        # Recreate the listener so a newly saved bind is picked up immediately.
+        try:
+            if self.keyboard_listener is not None:
+                self.keyboard_listener.stop()
+                self.keyboard_listener = None
+        except Exception:
+            self.keyboard_listener = None
+        self._hotkey_held = False
+        self._hotkey_shot_armed = True
+        self._ensure_keyboard_listener()
+
+    @staticmethod
+    def _serialize_pynput_key(key):
+        """Return a stable, layout-independent descriptor for a physical key."""
+        try:
+            vk = getattr(key, 'vk', None)
+            if vk is not None:
+                return f"vk:{int(vk)}"
+        except Exception:
+            pass
+        try:
+            name = getattr(key, 'name', None)
+            if name:
+                return f"name:{name}"
+        except Exception:
+            pass
+        try:
+            char = getattr(key, 'char', None)
+            if char:
+                return f"char:{ord(char)}"
+        except Exception:
+            pass
+        return None
+
+    @staticmethod
+    def _descriptor_to_pynput(descriptor):
+        import pynput.keyboard as pynput_kb
+        from pynput.keyboard import Key
+        if not descriptor:
+            return None
+        try:
+            if descriptor.startswith('vk:'):
+                return pynput_kb.KeyCode.from_vk(int(descriptor.split(':', 1)[1]))
+            if descriptor.startswith('name:'):
+                return getattr(Key, descriptor.split(':', 1)[1], None)
+            if descriptor.startswith('char:'):
+                return pynput_kb.KeyCode.from_char(chr(int(descriptor.split(':', 1)[1])))
+        except Exception:
+            return None
+        return None
+
+    def _key_matches_saved(self, key):
+        descriptor = load_settings().bind_key
+        if not descriptor:
+            # Old installs may still have only a Qt keycode.
+            target = self._qt_key_to_pynput(self.current_bind_keycode)
+            return self._pynput_keys_equal(key, target)
+        target = self._descriptor_to_pynput(descriptor)
+        return self._pynput_keys_equal(key, target)
+
+    @staticmethod
+    def _pynput_keys_equal(a, b):
+        if a is None or b is None:
+            return False
+        try:
+            avk, bvk = getattr(a, 'vk', None), getattr(b, 'vk', None)
+            if avk is not None and bvk is not None:
+                return int(avk) == int(bvk)
+        except Exception:
+            pass
+        try:
+            return a == b
+        except Exception:
+            return False
+
+    @staticmethod
+    def _pynput_key_name(key):
+        names = {
+            'alt_l': 'Alt (левый)', 'alt_r': 'Alt (правый)',
+            'ctrl_l': 'Ctrl (левый)', 'ctrl_r': 'Ctrl (правый)',
+            'shift_l': 'Shift (левый)', 'shift_r': 'Shift (правый)',
+            'cmd_l': 'Win (левый)', 'cmd_r': 'Win (правый)',
+            'caps_lock': 'Caps Lock', 'num_lock': 'Num Lock',
+            'scroll_lock': 'Scroll Lock', 'print_screen': 'Print Screen',
+            'page_up': 'Page Up', 'page_down': 'Page Down',
+            'backspace': 'Backspace', 'space': 'Space',
+            'enter': 'Enter', 'tab': 'Tab', 'esc': 'Esc',
+        }
+        try:
+            name = getattr(key, 'name', None)
+            if name:
+                return names.get(name, name.replace('_', ' ').title())
+            char = getattr(key, 'char', None)
+            if char:
+                return char.upper()
+            vk = getattr(key, 'vk', None)
+            if vk is not None:
+                return f"VK {vk}"
+        except Exception:
+            pass
+        return str(key)
+
+    def _descriptor_name(self, descriptor):
+        key = self._descriptor_to_pynput(descriptor)
+        if key is not None:
+            return self._pynput_key_name(key)
+        return descriptor
+
+    @staticmethod
+    def _legacy_qt_key_from_pynput(key):
+        """Best-effort legacy integer for old configs/UI compatibility."""
+        try:
+            from pynput.keyboard import Key
+            if isinstance(key, Key):
+                reverse = {
+                    Key.shift: Qt.Key_Shift, Key.ctrl: Qt.Key_Control,
+                    Key.alt: Qt.Key_Alt, Key.cmd: Qt.Key_Meta,
+                    Key.caps_lock: Qt.Key_CapsLock, Key.num_lock: Qt.Key_NumLock,
+                    Key.scroll_lock: Qt.Key_ScrollLock, Key.space: Qt.Key_Space,
+                    Key.enter: Qt.Key_Enter, Key.tab: Qt.Key_Tab,
+                    Key.backspace: Qt.Key_Backspace, Key.esc: Qt.Key_Escape,
+                }
+                return reverse.get(key)
+            char = getattr(key, 'char', None)
+            if char and len(char) == 1 and char.isascii():
+                return ord(char.upper()) if char.isalpha() else ord(char)
+        except Exception:
+            pass
+        return None
 
     def _qt_key_to_pynput(self, qt_key_code):
         import pynput.keyboard as pynput_kb
         from pynput.keyboard import Key
+        if qt_key_code is None:
+            return None
         if Qt.Key_A <= qt_key_code <= Qt.Key_Z:
             return pynput_kb.KeyCode.from_char(chr(qt_key_code).lower())
         if Qt.Key_0 <= qt_key_code <= Qt.Key_9:
@@ -589,10 +810,9 @@ class MainWindow(QWidget):
             Qt.Key_Return: Key.enter, Qt.Key_Enter: Key.enter,
             Qt.Key_Tab: Key.tab, Qt.Key_Backspace: Key.backspace,
             Qt.Key_CapsLock: Key.caps_lock, Qt.Key_NumLock: Key.num_lock,
+            Qt.Key_ScrollLock: Key.scroll_lock,
         }
-        if qt_key_code in mapping:
-            return mapping[qt_key_code]
-        return None
+        return mapping.get(qt_key_code)
 
     def _get_key_name(self, key_code):
         if key_code is None:
@@ -604,16 +824,12 @@ class MainWindow(QWidget):
         if Qt.Key_F1 <= key_code <= Qt.Key_F24:
             return f"F{key_code - Qt.Key_F1 + 1}"
         names = {
-            Qt.Key_Insert: "Insert", Qt.Key_Delete: "Delete",
-            Qt.Key_Home: "Home", Qt.Key_End: "End",
-            Qt.Key_PageUp: "Page Up", Qt.Key_PageDown: "Page Down",
-            Qt.Key_Print: "Print Screen", Qt.Key_Pause: "Pause",
-            Qt.Key_Escape: "Esc", Qt.Key_Left: "←", Qt.Key_Right: "→",
-            Qt.Key_Up: "↑", Qt.Key_Down: "↓", Qt.Key_Shift: "Shift",
-            Qt.Key_Control: "Ctrl", Qt.Key_Alt: "Alt",
-            Qt.Key_Space: "Space", Qt.Key_Return: "Enter",
-            Qt.Key_Enter: "Enter", Qt.Key_Tab: "Tab",
-            Qt.Key_Backspace: "Backspace", Qt.Key_CapsLock: "Caps Lock",
+            Qt.Key_Insert: "Insert", Qt.Key_Delete: "Delete", Qt.Key_Home: "Home", Qt.Key_End: "End",
+            Qt.Key_PageUp: "Page Up", Qt.Key_PageDown: "Page Down", Qt.Key_Print: "Print Screen",
+            Qt.Key_Pause: "Pause", Qt.Key_Escape: "Esc", Qt.Key_Left: "←", Qt.Key_Right: "→",
+            Qt.Key_Up: "↑", Qt.Key_Down: "↓", Qt.Key_Shift: "Shift", Qt.Key_Control: "Ctrl",
+            Qt.Key_Alt: "Alt", Qt.Key_Space: "Space", Qt.Key_Return: "Enter", Qt.Key_Enter: "Enter",
+            Qt.Key_Tab: "Tab", Qt.Key_Backspace: "Backspace", Qt.Key_CapsLock: "Caps Lock",
         }
         return names.get(key_code, f"Key_{key_code}")
 

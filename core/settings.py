@@ -20,6 +20,7 @@ class AppSettings:
     log_display_mode: str = 'all'
     theme: str = 'Небо'
     bind_keycode: Optional[int] = None
+    bind_key: Optional[str] = None
     verified_bot_id: str = ''
     verified_chat_id: str = ''
     tg_proxy_type: str = 'none'
@@ -32,7 +33,7 @@ class AppSettings:
 _COLUMNS = (
     'nick', 'logs', 'platform', 'bot_id', 'chat_id', 'vk_user_id', 'vk_token',
     'use_sound', 'screenshot_delay', 'log_display_mode', 'theme',
-    'bind_keycode', 'verified_bot_id', 'verified_chat_id',
+    'bind_keycode', 'bind_key', 'verified_bot_id', 'verified_chat_id',
     'tg_proxy_type', 'tg_proxy_host', 'tg_proxy_port', 'tg_proxy_username', 'tg_proxy_password',
 )
 
@@ -62,6 +63,7 @@ def load_settings() -> AppSettings:
         log_display_mode=row['log_display_mode'] or 'all',
         theme=row['theme'] or 'Небо',
         bind_keycode=row['bind_keycode'],
+        bind_key=row['bind_key'] if 'bind_key' in row.keys() else None,
         verified_bot_id=row['verified_bot_id'] or '',
         verified_chat_id=row['verified_chat_id'] or '',
         tg_proxy_type=row['tg_proxy_type'] if 'tg_proxy_type' in row.keys() else 'none',

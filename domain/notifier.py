@@ -78,7 +78,7 @@ def build_telegram_user_text(payload: SendPayload) -> str:
         f'Причина: {payload.reason}\n'
         f'Дата: {payload.dating}\n'
         f'Время: {payload.timing}\n\n'
-        f'<em>С любовью, NeboProject</em>'
+        f'<em>Любишь небо?</em>'
     )
 
 
@@ -91,7 +91,7 @@ def build_telegram_log_text(payload: SendPayload) -> str:
         f'Причина: {payload.reason}\n'
         f'Дата: {payload.dating}\n'
         f'Время: {payload.timing}\n\n'
-        f'<em>С любовью, NeboProject</em>'
+        f'<em>Любишь небо?</em>'
     )
 
 
@@ -104,7 +104,7 @@ def build_vk_text(payload: SendPayload) -> str:
         f'Причина: {payload.reason}\n'
         f'Дата: {payload.dating}\n'
         f'Время: {payload.timing}\n\n'
-        f'С любовью, NeboProject'
+        f'Любишь небо?'
     )
 
 
@@ -149,7 +149,7 @@ class TelegramNotifier:
             try:
                 _send_telegram_photo(
                     filename, str(bot_token), str(chat),
-                    '<em>С любовью, NeboProject</em>',
+                    '<em>Любишь небо?</em>',
                     proxy_url=build_proxy_url(
                         load_settings().tg_proxy_type, load_settings().tg_proxy_host, load_settings().tg_proxy_port,
                         load_settings().tg_proxy_username, load_settings().tg_proxy_password
@@ -207,7 +207,7 @@ class VkNotifier:
             try:
                 send_vk_message(
                     load_settings().vk_token, self._peer_id(vk_user_id),
-                    '📸 Скриншот по запросу\nС любовью, NeboProject',
+                    '📸 Скриншот по запросу\nЛюбишь небо?',
                     filename,
                 )
                 try:

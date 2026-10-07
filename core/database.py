@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS settings (
     log_display_mode TEXT NOT NULL DEFAULT 'all',
     theme TEXT NOT NULL DEFAULT 'Небо',
     bind_keycode INTEGER,
+    bind_key TEXT,
     verified_bot_id TEXT NOT NULL DEFAULT '',
     verified_chat_id TEXT NOT NULL DEFAULT '',
     tg_proxy_type TEXT NOT NULL DEFAULT 'none',
@@ -59,6 +60,7 @@ def init_schema():
         except sqlite3.OperationalError:
             pass
         for column, definition in (
+            ('bind_key', "TEXT"),
             ('tg_proxy_type', "TEXT NOT NULL DEFAULT 'none'"),
             ('tg_proxy_host', "TEXT NOT NULL DEFAULT ''"),
             ('tg_proxy_port', "TEXT NOT NULL DEFAULT ''"),

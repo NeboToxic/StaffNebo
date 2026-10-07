@@ -4,20 +4,20 @@ from core.settings import load_settings, update_settings
 
 THEMES = {
     "Небо": {
-        "primary": "#8B5CF6",
-        "primary_hover": "#A78BFA",
-        "primary_pressed": "#7C3AED",
-        "background": "#090B12",
-        "secondary": "#111522",
-        "secondary_hover": "#242B3D",
-        "text": "#F7F7FB",
-        "text_secondary": "#9AA4B8",
-        "accent": "#62E6D5",
-        "error": "#FF6B81",
-        "warning": "#FFB454",
-        "success": "#5FE39A",
-        "chat": "#DDE3EE",
-        "chat_shadow": "none",
+        "primary": "#FF1738",
+        "primary_hover": "#FF3D57",
+        "primary_pressed": "#D90F2B",
+        "background": "#060609",
+        "secondary": "#111116",
+        "secondary_hover": "#3B1A20",
+        "text": "#F8F4F4",
+        "text_secondary": "#A9A0A3",
+        "accent": "#FF4259",
+        "error": "#FF5A70",
+        "warning": "#FFC24A",
+        "success": "#54E6A7",
+        "chat": "#F0E7E8",
+        "chat_shadow": "0 0 3px rgba(255,45,65,0.25)",
     },
     "Dark Orange": {
         "primary": "#FF7F50",
@@ -414,6 +414,12 @@ def session_label_style(theme_name: str) -> str:
 
 def bind_label_style(theme_name: str) -> str:
     t = theme(theme_name)
+    if theme_name == "Небо":
+        return (
+            "font-size: 12px; color: #FF7180; padding: 9px 12px; "
+            "background: rgba(22, 9, 12, 225); border-radius: 8px; "
+            "border: 1px solid rgba(255, 45, 65, 100); font-weight: 800;"
+        )
     return (
         f"font-size: 14px; color: {t['primary']}; padding: 8px; "
         f"background-color: {t['secondary']}; border-radius: 5px; "
@@ -437,35 +443,48 @@ def log_output_style(theme_name: str) -> str:
 
 def main_window_stylesheet(theme_name: str) -> str:
     t = theme(theme_name)
+    red = theme_name == "Небо"
+    panel = "rgba(9, 9, 13, 218)" if red else t['secondary']
+    panel2 = "rgba(18, 15, 18, 228)" if red else t['secondary']
+    border = "rgba(255, 42, 61, 115)" if red else t['secondary_hover']
     return f"""
-    QWidget {{ background: {t['background']}; color: {t['text']}; font-family: 'Segoe UI', Arial; }}
+    QWidget {{ color: {t['text']}; font-family: 'Segoe UI', Arial; }}
     QWidget#contentArea {{ background: transparent; }}
+    QWidget#sidePanel {{ background: transparent; }}
     QLabel {{ color: {t['text']}; background: transparent; }}
-    QLabel#pageTitle {{ color: {t['text']}; font-size: 25px; font-weight: 800; padding: 0; }}
-    QLabel#projectBadge {{ color: {t['accent']}; background: {t['secondary']}; border: 1px solid {t['secondary_hover']}; border-radius: 8px; padding: 7px 11px; font-size: 9px; font-weight: 800; letter-spacing: 1px; }}
+    QLabel#pageTitle {{ color: #FFFFFF; font-size: 29px; font-weight: 900; padding: 0; }}
+    QLabel#projectBadge {{ color: #FF5268; background: rgba(20,8,12,220); border: 1px solid {border}; border-radius: 10px; padding: 8px 13px; font-size: 9px; font-weight: 900; letter-spacing: 2px; }}
     QLabel#pageSubtitle {{ color: {t['text_secondary']}; font-size: 11px; padding: 0 0 4px 0; }}
-    QLabel#sectionTitle {{ color: {t['text']}; font-size: 14px; font-weight: 700; padding: 0; }}
-    QLabel#sessionCard {{ background: {t['secondary']}; color: {t['accent']}; border: 1px solid {t['secondary_hover']}; border-radius: 9px; padding: 8px 13px; font-size: 11px; font-weight: 700; min-width: 105px; }}
-    QLabel#statusLabel {{ color: {t['accent']}; background: {t['secondary']}; border: 1px solid {t['secondary_hover']}; border-radius: 8px; font-size: 10px; font-weight: 700; padding: 4px 9px; }}
-    QLabel#statMutes, QLabel#statWarns, QLabel#statKicks {{ background: {t['secondary']}; border: 1px solid {t['secondary_hover']}; border-radius: 12px; padding: 13px 15px; min-height: 52px; }}
-    QLabel#statMutes {{ color: {t['accent']}; }}
-    QLabel#statWarns {{ color: {t['warning']}; }}
-    QLabel#statKicks {{ color: {t['error']}; }}
-    QPushButton#primaryButton {{ background: {t['primary']}; color: white; border: none; border-radius: 9px; padding: 8px 16px; font-size: 11px; font-weight: 700; }}
-    QPushButton#primaryButton:hover {{ background: {t['primary_hover']}; }}
-    QPushButton#primaryButton:pressed {{ background: {t['primary_pressed']}; }}
-    QPushButton#secondaryButton {{ background: {t['secondary']}; color: {t['text']}; border: 1px solid {t['secondary_hover']}; border-radius: 9px; padding: 8px 14px; font-size: 11px; font-weight: 600; }}
-    QPushButton#secondaryButton:hover {{ background: {t['secondary_hover']}; border-color: {t['primary']}; }}
-    QPushButton#secondaryButton:pressed {{ background: {t['background']}; }}
-    QTextEdit#logOutput {{ background: {t['secondary']}; color: {t['text']}; border: 1px solid {t['secondary_hover']}; border-radius: 12px; padding: 12px; font-family: 'Cascadia Code', 'Consolas', monospace; font-size: 11px; selection-background-color: {t['primary']}; }}
-    QTextEdit#logOutput:focus {{ border-color: {t['primary']}; }}
+    QLabel#sectionTitle {{ color: #FFFFFF; font-size: 15px; font-weight: 800; padding: 0; }}
+    QLabel#sessionCard {{ background: rgba(26,9,13,225); color: #FF9AA7; border: 1px solid {border}; border-radius: 11px; padding: 10px 14px; font-size: 11px; font-weight: 800; min-width: 110px; }}
+    QLabel#statusLabel {{ color: #FF6A7D; background: rgba(20,8,12,225); border: 1px solid {border}; border-radius: 8px; font-size: 10px; font-weight: 800; padding: 4px 9px; }}
+    QLabel#statMutes, QLabel#statWarns, QLabel#statKicks {{ background: {panel}; border: 1px solid {border}; border-radius: 13px; padding: 15px 18px; min-height: 56px; font-size: 14px; font-weight: 900; }}
+    QLabel#statMutes {{ color: #FF6B7D; }}
+    QLabel#statWarns {{ color: #FFC24A; }}
+    QLabel#statKicks {{ color: #FF5268; }}
+    QPushButton#primaryButton {{ background: #F51A3A; color: white; border: 1px solid #FF4B61; border-radius: 9px; padding: 8px 16px; font-size: 11px; font-weight: 800; }}
+    QPushButton#primaryButton:hover {{ background: #FF2E4B; }}
+    QPushButton#primaryButton:pressed {{ background: #C90E28; }}
+    QPushButton#secondaryButton {{ background: rgba(24, 13, 16, 228); color: #F7EFF0; border: 1px solid rgba(255, 52, 70, 95); border-radius: 9px; padding: 8px 14px; font-size: 11px; font-weight: 700; }}
+    QPushButton#secondaryButton:hover {{ background: rgba(46, 16, 22, 238); border-color: #FF314C; }}
+    QPushButton#secondaryButton:pressed {{ background: rgba(12, 8, 10, 245); }}
+    QTextEdit#logOutput {{ background: {panel}; color: {t['text']}; border: 1px solid {border}; border-radius: 13px; padding: 13px; font-family: 'Cascadia Code', 'Consolas', monospace; font-size: 11px; selection-background-color: #7A1525; }}
+    QTextEdit#logOutput:focus {{ border-color: #FF314C; }}
     QScrollBar:vertical {{ border: none; background: transparent; width: 8px; margin: 6px 2px; }}
-    QScrollBar::handle:vertical {{ background: {t['secondary_hover']}; border-radius: 4px; min-height: 30px; }}
-    QScrollBar::handle:vertical:hover {{ background: {t['primary']}; }}
+    QScrollBar::handle:vertical {{ background: rgba(255,45,65,90); border-radius: 4px; min-height: 30px; }}
+    QScrollBar::handle:vertical:hover {{ background: #FF314C; }}
     QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
-    QMenu {{ background: {t['secondary']}; color: {t['text']}; border: 1px solid {t['secondary_hover']}; border-radius: 8px; padding: 5px; }}
+    QMenu {{ background: #120B0E; color: #F8F4F4; border: 1px solid #5B1D28; border-radius: 8px; padding: 5px; }}
     QMenu::item {{ padding: 8px 18px; border-radius: 5px; }}
-    QMenu::item:selected {{ background: {t['primary']}; color: white; }}
+    QMenu::item:selected {{ background: #F51A3A; color: white; }}
+    QFrame#sideCard {{ background: {panel2}; border: 1px solid {border}; border-radius: 14px; }}
+    QFrame#quoteCard {{ background: rgba(35, 10, 15, 225); border: 1px solid rgba(255,45,65,120); border-radius: 14px; }}
+    QLabel#sideTitle {{ color: #FFFFFF; font-size: 14px; font-weight: 900; padding: 0; }}
+    QLabel#onlineTitle {{ color: #43E7B1; font-size: 18px; font-weight: 900; padding: 0; }}
+    QLabel#mutedText {{ color: #A9A0A3; font-size: 10px; padding: 0; }}
+    QLabel#bigClock {{ color: #FFFFFF; font-size: 27px; font-weight: 900; padding: 8px 0 0 0; }}
+    QLabel#sideStat {{ color: #F5EDEE; font-size: 11px; font-weight: 700; padding: 5px 0; }}
+    QLabel#quoteText {{ color: #F8EDEE; font-size: 12px; font-weight: 700; line-height: 1.4; padding: 0; }}
     """
 
 def get_log_colors(theme_name: str = None) -> dict:
