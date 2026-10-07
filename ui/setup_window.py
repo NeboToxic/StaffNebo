@@ -5,7 +5,7 @@ import traceback
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QLineEdit, QComboBox, QCheckBox, QStackedWidget,
-    QProgressBar, QSlider, QFileDialog, QSizePolicy
+    QProgressBar, QSlider, QFileDialog, QSizePolicy, QSystemTrayIcon
 )
 from PyQt5.QtCore import Qt, QRectF, QTimer, QPointF
 from PyQt5.QtGui import QPainter, QColor, QPen, QIcon, QImage, QPainterPath
@@ -18,7 +18,7 @@ from core.helpers import gui_print
 from threads.validation import ValidationThread
 from core.paths import resource_path, data_path
 from core.telegram_proxy import build_proxy_url, requests_proxies
-from core.windows_integration import set_startup_enabled, is_startup_enabled, set_taskbar_hidden
+from core.windows_integration import (set_startup_enabled, is_startup_enabled, set_taskbar_hidden, set_cristalix_startup_enabled, is_cristalix_startup_enabled)
 import requests
 
 
@@ -64,9 +64,8 @@ class SetupWindow(BaseWindow):
         self._load_existing_config()
         self._update_theme_specific_styles()
         self._load_verification_info()
-        # Tray is initialized only after the main window is opened. This avoids
-        # startup failures on systems where the tray service is unavailable.
         QTimer.singleShot(100, lambda: self._on_platform_changed(self.platform_combo.currentText()))
+        QTimer.singleShot(350, self._ensure_saved_tray)
 
     def _setup_tray(self):
         if self.tray_icon is not None:
@@ -100,10 +99,26 @@ class SetupWindow(BaseWindow):
             self._restore_from_tray()
 
     def _restore_from_tray(self):
+        try:
+            if getattr(self, '_main_screen', None) is not None:
+                self.stacked_widget.setCurrentWidget(self._main_screen)
+        except Exception:
+            pass
         self.showNormal()
         self.show()
         self.raise_()
         self.activateWindow()
+
+    def _ensure_saved_tray(self):
+        try:
+            if bool(load_settings().hide_from_taskbar):
+                self._setup_tray()
+                self.apply_taskbar_mode(True)
+        except Exception as exc:
+            print(f"[WARNING] Не удалось восстановить режим трея: {exc}")
+
+    def _exit_from_tray(self):
+        self.close()
 
     def minimize_to_tray(self):
         try:
@@ -374,6 +389,8 @@ class SetupWindow(BaseWindow):
             self.sound_checkbox.setChecked(bool(settings.use_sound))
             if hasattr(self, "startup_checkbox"):
                 self.startup_checkbox.setChecked(bool(getattr(settings, "startup_windows", False)) and is_startup_enabled())
+            if hasattr(self, "cristalix_startup_checkbox"):
+                self.cristalix_startup_checkbox.setChecked(bool(getattr(settings, "startup_cristalix", False)) and is_cristalix_startup_enabled())
             try:
                 self.delay_slider.setValue(int(float(settings.screenshot_delay) * 10))
             except (ValueError, TypeError):
@@ -578,6 +595,15 @@ class SetupWindow(BaseWindow):
         startup_layout.addStretch()
         content_layout.addLayout(startup_layout)
 
+        self.cristalix_startup_checkbox = QCheckBox("Запускать при запуске Cristalix.exe")
+        self.cristalix_startup_checkbox.setChecked(is_cristalix_startup_enabled())
+        self.cristalix_startup_checkbox.setStyleSheet(checkbox_style(self.current_theme))
+        cristalix_layout = QHBoxLayout()
+        cristalix_layout.addStretch()
+        cristalix_layout.addWidget(self.cristalix_startup_checkbox)
+        cristalix_layout.addStretch()
+        content_layout.addLayout(cristalix_layout)
+
         self.confirm_btn = QPushButton("Подтвердить")
         self.confirm_btn.setFixedHeight(40)
         self.confirm_btn.setMinimumWidth(200)
@@ -772,9 +798,13 @@ class SetupWindow(BaseWindow):
             existing.vk_user_id = vk_saved
             existing.vk_token = vk_token_saved
             existing.startup_windows = self.startup_checkbox.isChecked()
+            existing.startup_cristalix = self.cristalix_startup_checkbox.isChecked()
             if not set_startup_enabled(existing.startup_windows):
                 if existing.startup_windows:
                     raise RuntimeError("Не удалось включить автозапуск Windows")
+            if not set_cristalix_startup_enabled(existing.startup_cristalix):
+                if existing.startup_cristalix:
+                    raise RuntimeError("Не удалось включить запуск при старте Cristalix.exe")
             existing.tg_proxy_type = proxy_type_val if platform_choice == 'Telegram' else existing.tg_proxy_type
             existing.tg_proxy_host = proxy_host_val if platform_choice == 'Telegram' else existing.tg_proxy_host
             existing.tg_proxy_port = proxy_port_val if platform_choice == 'Telegram' else existing.tg_proxy_port
