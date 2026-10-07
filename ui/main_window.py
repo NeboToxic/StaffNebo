@@ -174,9 +174,17 @@ class MainWindow(QWidget):
             self.setStyleSheet(self._get_theme_stylesheet())
             self._update_theme_specific_styles()
             self._update_log_mode_btn_style()
-            update_settings(panel_opacity=self.panel_opacity)
+            # Запись в БД выполняется один раз после окончания движения.
+            if hasattr(self, "_opacity_save_timer"):
+                self._opacity_save_timer.start(300)
         except Exception as e:
             gui_print(f"[ERROR] Ошибка изменения прозрачности панелей: {e}")
+
+    def _save_panel_opacity(self):
+        try:
+            update_settings(panel_opacity=self.panel_opacity)
+        except Exception as e:
+            gui_print(f"[ERROR] Ошибка сохранения прозрачности панелей: {e}")
 
     def _on_tray_mode_changed(self, state):
         """Toggle hiding from taskbar without making startup dependent on tray."""
@@ -353,6 +361,11 @@ class MainWindow(QWidget):
         opacity_title.setObjectName("panelControlLabel")
         controls.addWidget(opacity_title)
         self.opacity_slider = QSlider(Qt.Horizontal)
+        # Сохраняем значение не на каждый пиксель движения, а после короткой паузы.
+        # Это не блокирует интерфейс и не создаёт десятки обращений к БД.
+        self._opacity_save_timer = QTimer(self)
+        self._opacity_save_timer.setSingleShot(True)
+        self._opacity_save_timer.timeout.connect(self._save_panel_opacity)
         self.opacity_slider.setRange(10, 100)
         self.opacity_slider.setValue(self.panel_opacity)
         self.opacity_slider.setFixedWidth(130)

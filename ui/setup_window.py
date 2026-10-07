@@ -64,26 +64,10 @@ class SetupWindow(BaseWindow):
         self._load_existing_config()
         self._update_theme_specific_styles()
         self._load_verification_info()
-        # Restore the tray state from the saved configuration after the setup
-        # window is visible. This keeps the tray alive across restarts.
-        QTimer.singleShot(150, self._restore_saved_tray_state)
+        # Не меняем стили окна и не скрываем его во время запуска setup-экрана.
+        # Это могло подвешивать Qt/Windows до появления основного окна.
+        # Трей будет создан после открытия MainWindow.
         QTimer.singleShot(200, lambda: self._on_platform_changed(self.platform_combo.currentText()))
-
-    def _restore_saved_tray_state(self):
-        try:
-            settings = load_settings()
-            hidden = bool(getattr(settings, 'hide_from_taskbar', False))
-            if hidden:
-                self._setup_tray()
-                self.apply_taskbar_mode(True)
-                self.hide()
-                # Show again after changing the extended window style so the
-                # window remains available through the tray without a taskbar
-                # button.
-                self.show()
-                self.apply_taskbar_mode(True)
-        except Exception as exc:
-            print(f"[WARNING] Не удалось восстановить режим системного трея: {exc}")
 
     def _setup_tray(self):
         if self.tray_icon is not None:
@@ -917,6 +901,11 @@ class SetupWindow(BaseWindow):
 
         self._setup_tray()
         try:
+            # Применяем сохранённый режим только после полной инициализации
+            # главного окна. Так запуск не блокируется операциями WinAPI.
+            if bool(load_settings().hide_from_taskbar):
+                self.apply_taskbar_mode(True)
+                QTimer.singleShot(100, self.hide)
             self._main_screen.setup_initial_display()
             if not self._main_screen.log_monitor.isRunning():
                 self._main_screen.log_monitor.start()
