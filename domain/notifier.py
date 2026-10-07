@@ -37,7 +37,7 @@ def build_telegram_user_text(payload: SendPayload) -> str:
         f'Причина: {payload.reason}\n'
         f'Дата: {payload.dating}\n'
         f'Время: {payload.timing}\n\n'
-        f'<em>С любовью, StaffControl</em>'
+        f'<em>С любовью, NeboProject</em>'
     )
 
 
@@ -50,7 +50,7 @@ def build_telegram_log_text(payload: SendPayload) -> str:
         f'Причина: {payload.reason}\n'
         f'Дата: {payload.dating}\n'
         f'Время: {payload.timing}\n\n'
-        f'<em>С любовью, StaffControl</em>'
+        f'<em>С любовью, NeboProject</em>'
     )
 
 
@@ -63,7 +63,7 @@ def build_vk_text(payload: SendPayload) -> str:
         f'Причина: {payload.reason}\n'
         f'Дата: {payload.dating}\n'
         f'Время: {payload.timing}\n\n'
-        f'С любовью, StaffControl'
+        f'С любовью, NeboProject'
     )
 
 
@@ -104,7 +104,7 @@ class TelegramNotifier:
                 with open(filename, 'rb') as photo_file:
                     bot.send_photo(
                         int(chat), photo_file,
-                        '<em>С любовью, StaffControl</em>',
+                        '<em>С любовью, NeboProject</em>',
                         parse_mode='html',
                     )
                 try:
@@ -161,7 +161,7 @@ class VkNotifier:
             try:
                 send_vk_message(
                     load_settings().vk_token, self._peer_id(vk_user_id),
-                    '📸 Скриншот по запросу\nС любовью, StaffControl',
+                    '📸 Скриншот по запросу\nС любовью, NeboProject',
                     filename,
                 )
                 try:

@@ -4,10 +4,9 @@ import subprocess
 import datetime
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QTextEdit, QMenu, QAction, QSizePolicy, QFrame
+    QTextEdit, QMenu, QAction, QSizePolicy
 )
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal
-from PyQt5.QtGui import QPixmap
 
 from ui.title_bar import TitleBar
 from ui.theme_manager import (
@@ -121,19 +120,11 @@ class MainWindow(QWidget):
         self.theme_btn.setStyleSheet(toolbar)
         self.bind_label.setStyleSheet(bind_label_style(self.current_theme))
         t = self.themes[self.current_theme]
-        if self.current_theme == "Небо":
-            stat_base = ("background: #14151B; border: 1px solid #3A2028; "
-                         "border-radius: 13px; padding: 13px 15px; min-height: 58px; "
-                         "font-size: 13px; font-weight: 900;")
-            self.mutes_label.setStyleSheet(stat_base + "color: #FF304F;")
-            self.warns_label.setStyleSheet(stat_base + "color: #FFB547;")
-            self.kicks_label.setStyleSheet(stat_base + "color: #4FA7FF;")
-        else:
-            stat_base = (f"background: {t['secondary']}; border: 1px solid {t['secondary_hover']}; "
-                         f"border-radius: 12px; padding: 13px 15px; min-height: 52px; font-size: 12px; font-weight: 800;")
-            self.mutes_label.setStyleSheet(stat_base + f"color: {t['accent']};")
-            self.warns_label.setStyleSheet(stat_base + f"color: {t['warning']};")
-            self.kicks_label.setStyleSheet(stat_base + f"color: {t['error']};")
+        stat_base = (f"background: {t['secondary']}; border: 1px solid {t['secondary_hover']}; "
+                     f"border-radius: 12px; padding: 13px 15px; min-height: 52px; font-size: 12px; font-weight: 800;")
+        self.mutes_label.setStyleSheet(stat_base + f"color: {t['accent']};")
+        self.warns_label.setStyleSheet(stat_base + f"color: {t['warning']};")
+        self.kicks_label.setStyleSheet(stat_base + f"color: {t['error']};")
         self.session_timer_label.setStyleSheet(session_label_style(self.current_theme))
         self.log_output.setStyleSheet(log_output_style(self.current_theme))
         if hasattr(self, 'status_label'):
@@ -152,13 +143,12 @@ class MainWindow(QWidget):
             gui_print(f"[ERROR] Ошибка загрузки платформы: {e}")
 
     def _init_ui(self):
-        """Небо-style dashboard. Functional controls are kept from the original UI."""
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        # Верхняя панель
-        self.title_bar = TitleBar(f"Небо  •  StaffControl  •  v{VERSION}", self)
+        # Верхняя панель окна
+        self.title_bar = TitleBar(f"{APP_NAME}  •  v{VERSION}", self)
         self.title_label = self.title_bar.title_label
 
         self.status_label = QLabel("●  ОНЛАЙН")
@@ -167,13 +157,13 @@ class MainWindow(QWidget):
         self.title_bar.add_widget(self.status_label)
 
         self.log_mode_btn = QPushButton()
-        self.log_mode_btn.setFixedSize(94, 28)
+        self.log_mode_btn.setFixedSize(96, 28)
         self.log_mode_btn.setToolTip("Переключить режим отображения логов")
         self.log_mode_btn.clicked.connect(self._toggle_log_display_mode)
         self.title_bar.add_widget(self.log_mode_btn)
 
-        self.theme_btn = QPushButton("Небо")
-        self.theme_btn.setFixedSize(68, 28)
+        self.theme_btn = QPushButton("Темы")
+        self.theme_btn.setFixedSize(72, 28)
         self.theme_btn.setToolTip("Сменить тему")
         self.theme_btn.clicked.connect(self._show_theme_menu)
         self.title_bar.add_widget(self.theme_btn)
@@ -185,249 +175,85 @@ class MainWindow(QWidget):
 
         body = QWidget()
         body_layout = QHBoxLayout(body)
-        body_layout.setContentsMargins(14, 8, 14, 14)
-        body_layout.setSpacing(12)
+        body_layout.setContentsMargins(18, 14, 18, 18)
+        body_layout.setSpacing(0)
 
-        # Сайдбар
-        sidebar = QFrame()
-        sidebar.setObjectName("sidebar")
-        sidebar.setFixedWidth(220)
-        side = QVBoxLayout(sidebar)
-        side.setContentsMargins(14, 14, 14, 12)
-        side.setSpacing(7)
-
-        logo_row = QHBoxLayout()
-        logo = QLabel()
-        logo.setObjectName("neboLogo")
-        logo.setFixedSize(76, 58)
-        logo.setScaledContents(True)
-        logo_path = os.path.join(os.path.dirname(__file__), "..", "path", "nebo_logo.png")
-        logo_path = os.path.abspath(logo_path)
-        if os.path.exists(logo_path):
-            logo.setPixmap(QPixmap(logo_path))
-        logo_row.addWidget(logo)
-
-        brand_box = QVBoxLayout()
-        brand = QLabel("Небо")
-        brand.setObjectName("brandLabel")
-        brand_box.addWidget(brand)
-        sub = QLabel("STAFFCONTROL")
-        sub.setObjectName("brandSub")
-        brand_box.addWidget(sub)
-        logo_row.addLayout(brand_box)
-        side.addLayout(logo_row)
-
-        side_status = QLabel("МОДЕРАТОРСКИЙ ЦЕНТР")
-        side_status.setObjectName("sideCaption")
-        side.addWidget(side_status)
-
-        nav_dashboard = QPushButton("⌂   Главная")
-        nav_dashboard.setObjectName("navActive")
-        nav_dashboard.setEnabled(False)
-        side.addWidget(nav_dashboard)
-
-        nav_monitor = QPushButton("▤   Журнал событий")
-        nav_monitor.setObjectName("navButton")
-        nav_monitor.clicked.connect(lambda: self.log_output.setFocus())
-        side.addWidget(nav_monitor)
-
-        nav_capture = QPushButton("▣   Скриншот")
-        nav_capture.setObjectName("navButton")
-        nav_capture.clicked.connect(self.take_screenshot)
-        side.addWidget(nav_capture)
-
-        nav_settings = QPushButton("⚙   Настройки")
-        nav_settings.setObjectName("navButton")
-        nav_settings.clicked.connect(self._show_theme_menu)
-        side.addWidget(nav_settings)
-
-        side.addStretch(1)
-
-        # Декоративный пиксельный персонаж
-        char = QLabel()
-        char.setObjectName("neboCharacter")
-        char.setAlignment(Qt.AlignCenter | Qt.AlignBottom)
-        char.setMaximumHeight(150)
-        char.setScaledContents(True)
-        char_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "path", "nebo_character.png"))
-        if os.path.exists(char_path):
-            char.setPixmap(QPixmap(char_path))
-        side.addWidget(char)
-
-        bind_hint = QLabel("ГОРЯЧАЯ КЛАВИША")
-        bind_hint.setObjectName("sideCaption")
-        side.addWidget(bind_hint)
-
-        self.bind_label = QLabel("Текущий бинд: Не задан")
-        self.bind_label.setObjectName("bindCard")
-        self.bind_label.setWordWrap(True)
-        side.addWidget(self.bind_label)
-
-        version_label = QLabel(f"Небо StaffControl  {VERSION}")
-        version_label.setObjectName("versionLabel")
-        side.addWidget(version_label)
-
-        body_layout.addWidget(sidebar)
-
-        # Центральная область
+        # Основная область
         content = QWidget()
         content.setObjectName("contentArea")
         content_layout = QVBoxLayout(content)
         content_layout.setContentsMargins(0, 0, 0, 0)
-        content_layout.setSpacing(10)
+        content_layout.setSpacing(14)
 
-        hero = QFrame()
-        hero.setObjectName("heroCard")
-        hero_layout = QHBoxLayout(hero)
-        hero_layout.setContentsMargins(18, 12, 18, 12)
-        hero_layout.setSpacing(10)
-
-        hero_text = QVBoxLayout()
+        header_row = QHBoxLayout()
         header = QLabel("Панель управления")
         header.setObjectName("pageTitle")
-        hero_text.addWidget(header)
-        subtitle = QLabel("Добро пожаловать в StaffControl, Небо. 👋")
-        subtitle.setObjectName("pageSubtitle")
-        hero_text.addWidget(subtitle)
-        hero_layout.addLayout(hero_text)
-        hero_layout.addStretch()
-
-        self.session_timer_label = QLabel("00:00:00")
+        header_row.addWidget(header)
+        header_row.addStretch()
+        project_badge = QLabel("NEBO PROJECT")
+        project_badge.setObjectName("projectBadge")
+        project_badge.setAlignment(Qt.AlignCenter)
+        header_row.addWidget(project_badge)
+        self.session_timer_label = QLabel("Сессия 00:00")
         self.session_timer_label.setObjectName("sessionCard")
         self.session_timer_label.setAlignment(Qt.AlignCenter)
-        hero_layout.addWidget(self.session_timer_label)
-        content_layout.addWidget(hero)
+        header_row.addWidget(self.session_timer_label)
+        content_layout.addLayout(header_row)
+
+        subtitle = QLabel("Автоматический контроль действий модератора и обработка latest.log")
+        subtitle.setObjectName("pageSubtitle")
+        content_layout.addWidget(subtitle)
 
         # Карточки статистики
         stats_row = QHBoxLayout()
-        stats_row.setSpacing(9)
-        self.mutes_label = QLabel("🔇  МУТЫ\n0")
-        self.warns_label = QLabel("⚠  ВАРНЫ\n0")
-        self.kicks_label = QLabel("➤  КИКИ\n0")
-        for label, obj in (
-            (self.mutes_label, "statMutes"),
-            (self.warns_label, "statWarns"),
-            (self.kicks_label, "statKicks"),
-        ):
-            label.setObjectName(obj)
+        stats_row.setSpacing(10)
+        self.mutes_label = QLabel("МУТЫ\n0")
+        self.warns_label = QLabel("ВАРНЫ\n0")
+        self.kicks_label = QLabel("КИКИ\n0")
+        self.mutes_label.setObjectName("statMutes")
+        self.warns_label.setObjectName("statWarns")
+        self.kicks_label.setObjectName("statKicks")
+        for label in (self.mutes_label, self.warns_label, self.kicks_label):
             label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
             stats_row.addWidget(label, 1)
         content_layout.addLayout(stats_row)
-
-        # Журнал
-        log_card = QFrame()
-        log_card.setObjectName("logCard")
-        log_layout = QVBoxLayout(log_card)
-        log_layout.setContentsMargins(14, 12, 14, 12)
-        log_layout.setSpacing(8)
 
         log_header = QHBoxLayout()
         log_title = QLabel("Журнал событий")
         log_title.setObjectName("sectionTitle")
         log_header.addWidget(log_title)
         log_header.addStretch()
-
         self.clear_btn = QPushButton("Очистить")
         self.clear_btn.setObjectName("secondaryButton")
-        self.clear_btn.setFixedHeight(30)
+        self.clear_btn.setFixedHeight(32)
         self.clear_btn.clicked.connect(self._clear_logs)
         log_header.addWidget(self.clear_btn)
-        log_layout.addLayout(log_header)
+        content_layout.addLayout(log_header)
 
         self.log_output = QTextEdit()
         self.log_output.setObjectName("logOutput")
         self.log_output.setReadOnly(True)
         self.log_output.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.log_output.setPlaceholderText("Здесь появятся события мониторинга…")
-        log_layout.addWidget(self.log_output, 1)
-        content_layout.addWidget(log_card, 1)
+        content_layout.addWidget(self.log_output, 1)
 
-        # Нижние действия
         bottom = QHBoxLayout()
         bottom.setSpacing(8)
-
         self.bind_btn = QPushButton("⌨  Изменить бинд")
         self.bind_btn.setObjectName("primaryButton")
-        self.bind_btn.setFixedHeight(40)
+        self.bind_btn.setFixedHeight(38)
         self.bind_btn.clicked.connect(self._start_binding)
         bottom.addWidget(self.bind_btn)
 
         shot_btn = QPushButton("▣  Сделать скриншот")
         shot_btn.setObjectName("secondaryButton")
-        shot_btn.setFixedHeight(40)
+        shot_btn.setFixedHeight(38)
         shot_btn.clicked.connect(self.take_screenshot)
         bottom.addWidget(shot_btn)
-
         bottom.addStretch()
-        footer = QLabel("● Telegram   •   ● VK   •   Система активна")
-        footer.setObjectName("footerStatus")
-        bottom.addWidget(footer)
+
         content_layout.addLayout(bottom)
-
         body_layout.addWidget(content, 1)
-
-        # Правая панель
-        right = QFrame()
-        right.setObjectName("rightPanel")
-        right.setFixedWidth(230)
-        right_layout = QVBoxLayout(right)
-        right_layout.setContentsMargins(12, 12, 12, 12)
-        right_layout.setSpacing(10)
-
-        avatar = QLabel()
-        avatar.setObjectName("neboAvatar")
-        avatar.setFixedHeight(145)
-        avatar.setScaledContents(True)
-        avatar_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "path", "nebo_avatar.png"))
-        if os.path.exists(avatar_path):
-            avatar.setPixmap(QPixmap(avatar_path))
-        right_layout.addWidget(avatar)
-
-        online = QFrame()
-        online.setObjectName("onlineCard")
-        online_l = QVBoxLayout(online)
-        online_l.setContentsMargins(12, 10, 12, 10)
-        online_title = QLabel("●  ОНЛАЙН")
-        online_title.setObjectName("onlineTitle")
-        online_l.addWidget(online_title)
-        online_sub = QLabel("Подключение активно")
-        online_sub.setObjectName("mutedLabel")
-        online_l.addWidget(online_sub)
-        right_layout.addWidget(online)
-
-        actions = QLabel("Быстрые действия")
-        actions.setObjectName("sectionTitle")
-        right_layout.addWidget(actions)
-
-        quick_bind = QPushButton("⌨  Изменить бинд")
-        quick_bind.setObjectName("primaryButton")
-        quick_bind.setFixedHeight(42)
-        quick_bind.clicked.connect(self._start_binding)
-        right_layout.addWidget(quick_bind)
-
-        quick_shot = QPushButton("▣  Сделать скриншот")
-        quick_shot.setObjectName("secondaryButton")
-        quick_shot.setFixedHeight(42)
-        quick_shot.clicked.connect(self.take_screenshot)
-        right_layout.addWidget(quick_shot)
-
-        day = QFrame()
-        day.setObjectName("dayCard")
-        dl = QVBoxLayout(day)
-        dl.setContentsMargins(12, 10, 12, 10)
-        dl.addWidget(QLabel("Статистика за день"))
-        self.day_summary = QLabel("Муты   0\nВарны   0\nКики     0")
-        self.day_summary.setObjectName("daySummary")
-        dl.addWidget(self.day_summary)
-        right_layout.addWidget(day)
-        right_layout.addStretch()
-
-        quote = QLabel("«Порядок рождается\nиз дисциплины.»\n\n— Небо")
-        quote.setObjectName("quoteLabel")
-        quote.setWordWrap(True)
-        right_layout.addWidget(quote)
-
-        body_layout.addWidget(right)
         main_layout.addWidget(body, 1)
 
         self.allowed_keys = (
@@ -456,15 +282,9 @@ class MainWindow(QWidget):
         gui_messages_buffer.clear()
 
     def update_stats(self):
-        self.mutes_label.setText(f"🔇  МУТЫ\n{all_mutes}")
-        self.warns_label.setText(f"⚠  ВАРНЫ\n{all_warns}")
-        self.kicks_label.setText(f"➤  КИКИ\n{all_kicks}")
-        if hasattr(self, "day_summary"):
-            self.day_summary.setText(
-                f"Муты   {all_mutes}\n"
-                f"Варны  {all_warns}\n"
-                f"Кики     {all_kicks}"
-            )
+        self.mutes_label.setText(f"МУТЫ\n{all_mutes}")
+        self.warns_label.setText(f"ВАРНЫ\n{all_warns}")
+        self.kicks_label.setText(f"КИКИ\n{all_kicks}")
 
     def _update_session_timer(self):
         elapsed = datetime.datetime.now() - self.session_start_time

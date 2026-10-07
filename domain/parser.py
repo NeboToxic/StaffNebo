@@ -2,7 +2,11 @@ import datetime
 import re
 from typing import Optional
 
-from tzlocal import get_localzone
+try:
+    from tzlocal import get_localzone
+except ImportError:
+    def get_localzone():
+        return datetime.datetime.now().astimezone().tzinfo
 
 from core.helpers import add_timezone_to_str
 from domain.events import ModerationEvent, PunishmentType

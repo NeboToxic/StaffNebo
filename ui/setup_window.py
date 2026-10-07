@@ -64,10 +64,10 @@ class SetupWindow(BaseWindow):
         theme = load_settings().theme
         if theme in self.themes:
             return theme
-        return "Dark Orange"
+        return "Небо"
 
     def _get_theme_stylesheet(self):
-        theme = self.themes.get(self.current_theme, self.themes["Dark Orange"])
+        theme = self.themes.get(self.current_theme, self.themes["Небо"])
         return f"""
         QWidget {{ background: transparent; color: {theme['text']}; font-family: 'Segoe UI', Arial; }}
         QLineEdit, QComboBox {{ background-color: {theme['secondary']}; color: {theme['text']}; border: 1px solid {theme['secondary_hover']}; border-radius: 5px; padding: 8px; font-size: 12px; min-width: 200px; }}
@@ -141,7 +141,7 @@ class SetupWindow(BaseWindow):
         return row
 
     def _get_content_frame_stylesheet(self):
-        theme = self.themes.get(self.current_theme, self.themes["Dark Orange"])
+        theme = self.themes.get(self.current_theme, self.themes["Небо"])
         return f"""
         QWidget#configCard {{
             background-color: {theme['secondary']};
@@ -333,7 +333,7 @@ class SetupWindow(BaseWindow):
         main_layout = QVBoxLayout(screen)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
-        self.title_bar = TitleBar("StaffControl - Настройка программы", self)
+        self.title_bar = TitleBar("NeboProject - Настройка программы", self)
         self.title_bar.apply_theme(self.current_theme)
         self.minimize_btn = self.title_bar.minimize_btn
         self.maximize_btn = self.title_bar.maximize_btn
@@ -472,7 +472,7 @@ class SetupWindow(BaseWindow):
         layout = QVBoxLayout(screen)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        self.loading_title = TitleBar("StaffControl - Загрузка", self)
+        self.loading_title = TitleBar("NeboProject - Загрузка", self)
         self.loading_title.apply_theme(self.current_theme)
         layout.addWidget(self.loading_title)
         content = QWidget()
@@ -657,7 +657,7 @@ class SetupWindow(BaseWindow):
             test_bot = telebot.TeleBot(bot_id_val)
             test_chat_id = int(chat_id_val)
             if need_verification_message:
-                test_bot.send_message(test_chat_id, "✅ StaffControl успешно подключен! Настройки корректны.", parse_mode='html')
+                test_bot.send_message(test_chat_id, "✅ NeboProject успешно подключен! Настройки корректны.", parse_mode='html')
             return {"success": True, "message": "Проверка пройдена успешно"}
         except Exception as e:
             error_msg = str(e).lower()

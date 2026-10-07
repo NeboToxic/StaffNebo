@@ -30,7 +30,7 @@ if __name__ == "__main__":
             QMessageBox.critical(
                 None,
                 "Ошибка конфигурации",
-                f"Не удалось запустить StaffControl.\n\n{config_error}"
+                f"Не удалось запустить NeboProject.\n\n{config_error}"
             )
             sys.exit(1)
 

@@ -18,7 +18,7 @@ class AppSettings:
     use_sound: bool = True
     screenshot_delay: float = 0.7
     log_display_mode: str = 'all'
-    theme: str = 'Dark Orange'
+    theme: str = 'Небо'
     bind_keycode: Optional[int] = None
     verified_bot_id: str = ''
     verified_chat_id: str = ''
@@ -54,7 +54,7 @@ def load_settings() -> AppSettings:
         use_sound=bool(row['use_sound']),
         screenshot_delay=float(row['screenshot_delay'] if row['screenshot_delay'] is not None else 0.7),
         log_display_mode=row['log_display_mode'] or 'all',
-        theme=row['theme'] or 'Dark Orange',
+        theme=row['theme'] or 'Небо',
         bind_keycode=row['bind_keycode'],
         verified_bot_id=row['verified_bot_id'] or '',
         verified_chat_id=row['verified_chat_id'] or '',
@@ -74,7 +74,7 @@ def save_settings(settings: AppSettings) -> AppSettings:
         1 if settings.use_sound else 0,
         float(settings.screenshot_delay) if settings.screenshot_delay is not None else 0.7,
         settings.log_display_mode or 'all',
-        settings.theme or 'Dark Orange',
+        settings.theme or 'Небо',
         settings.bind_keycode,
         settings.verified_bot_id or '',
         settings.verified_chat_id or '',

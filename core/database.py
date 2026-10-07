@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS settings (
     use_sound INTEGER NOT NULL DEFAULT 1,
     screenshot_delay REAL NOT NULL DEFAULT 0.7,
     log_display_mode TEXT NOT NULL DEFAULT 'all',
-    theme TEXT NOT NULL DEFAULT 'Dark Orange',
+    theme TEXT NOT NULL DEFAULT 'Небо',
     bind_keycode INTEGER,
     verified_bot_id TEXT NOT NULL DEFAULT '',
     verified_chat_id TEXT NOT NULL DEFAULT ''

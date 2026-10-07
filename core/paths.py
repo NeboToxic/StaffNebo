@@ -9,12 +9,12 @@ def _get_data_dir():
     else:
         # Mac/Linux: ~/.helpertool
         base = os.path.expanduser('~')
-    return os.path.join(base, 'StaffControl')
+    return os.path.join(base, 'NeboProject')
 
 
 DATA_DIR = _get_data_dir()
 SCREENSHOTS_DIR = os.path.join(DATA_DIR, 'screenshots')
-DB_PATH = os.path.join(DATA_DIR, 'staffcontrol.db')
+DB_PATH = os.path.join(DATA_DIR, 'neboproject.db')
 
 
 def resource_path(relative_path):

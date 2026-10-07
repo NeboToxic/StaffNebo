@@ -22,7 +22,7 @@ def gui_print(message: str):
 
 
 def cleanup():
-    gui_print("[SYSTEM] Выключение StaffControl...")
+    gui_print("[SYSTEM] Выключение NeboProject...")
 
     try:
         if g.main_window:
