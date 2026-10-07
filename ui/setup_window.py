@@ -65,6 +65,7 @@ class SetupWindow(BaseWindow):
         self._update_theme_specific_styles()
         self._load_verification_info()
         QTimer.singleShot(100, lambda: self._on_platform_changed(self.platform_combo.currentText()))
+        QTimer.singleShot(350, self._ensure_saved_tray)
 
     def _setup_tray(self):
         if self.tray_icon is not None:
@@ -816,7 +817,7 @@ class SetupWindow(BaseWindow):
                 'vk_token': vk_token_saved,
             }
             self.stacked_widget.setCurrentWidget(self.loading_screen)
-            QTimer.singleShot(0, self._start_validation)
+            self._start_validation()
         except Exception as e:
             self.confirm_btn.setEnabled(True)
             traceback.print_exc()
