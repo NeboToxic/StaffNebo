@@ -245,6 +245,16 @@ class MainWindow(QWidget):
         self.bind_btn.clicked.connect(self._start_binding)
         bottom.addWidget(self.bind_btn)
 
+        # Текущий бинд — отдельная подпись. Ранее этот виджет был удалён
+        # вместе с левой панелью, но логика загрузки/изменения бинда
+        # продолжала обращаться к self.bind_label.
+        self.bind_label = QLabel("Текущий бинд: Не задан")
+        self.bind_label.setObjectName("bindLabel")
+        self.bind_label.setAlignment(Qt.AlignCenter)
+        self.bind_label.setMinimumWidth(190)
+        self.bind_label.setStyleSheet(bind_label_style(self.current_theme))
+        bottom.addWidget(self.bind_label)
+
         shot_btn = QPushButton("▣  Сделать скриншот")
         shot_btn.setObjectName("secondaryButton")
         shot_btn.setFixedHeight(38)
