@@ -1,5 +1,7 @@
 import os
 import sys
+import getpass
+import traceback
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QLineEdit, QComboBox, QCheckBox, QStackedWidget,
@@ -285,7 +287,7 @@ class SetupWindow(BaseWindow):
                 self.nick_input.setText(settings.nick)
             if settings.logs:
                 logs_path = settings.logs
-                username = os.getlogin()
+                username = getpass.getuser()
                 minigames_path = f"C:\\Users\\{username}\\.cristalix\\updates\\Minigames\\logs\\latest.log"
                 staff_path = f"C:\\Users\\{username}\\.cristalix\\updates\\Minigames-staging-java21\\logs\\latest.log"
                 if logs_path == minigames_path:
@@ -550,6 +552,7 @@ class SetupWindow(BaseWindow):
 
     def validate_and_save(self):
         self.error_label.setVisible(False)
+        self.confirm_btn.setEnabled(False)
         nick = self.nick_input.text().strip()
         logs_type = self.logs_combo.currentText()
         platform_choice = self.platform_combo.currentText()
@@ -565,7 +568,7 @@ class SetupWindow(BaseWindow):
             elif not os.path.exists(logs_path):
                 errors.append(f"Указанный путь не существует:\n{logs_path}")
         else:
-            username = os.getlogin()
+            username = getpass.getuser()
             if logs_type == "Minigames":
                 logs_path = f"C:\\Users\\{username}\\.cristalix\\updates\\Minigames\\logs\\latest.log"
             else:
@@ -589,6 +592,7 @@ class SetupWindow(BaseWindow):
             elif not vk_id_val.isdigit():
                 errors.append("VK ID должен быть числом")
         if errors:
+            self.confirm_btn.setEnabled(True)
             self.show_error("\n".join(errors))
             return
 
@@ -630,7 +634,9 @@ class SetupWindow(BaseWindow):
             self.stacked_widget.setCurrentWidget(self.loading_screen)
             self._start_validation()
         except Exception as e:
-            self.show_error(f"Ошибка сохранения: {str(e)}")
+            self.confirm_btn.setEnabled(True)
+            traceback.print_exc()
+            self.show_error(f"Ошибка сохранения: {type(e).__name__}: {e}")
 
     def _start_validation(self):
         self.validation_thread = ValidationThread(
@@ -641,11 +647,27 @@ class SetupWindow(BaseWindow):
         self.validation_thread.start()
 
     def _on_validation_finished(self, success, message):
-        if success:
-            QTimer.singleShot(1000, self._open_main_window)
-        else:
+        # Важно: исключение из Qt-slot может завершить приложение без нормального
+        # сообщения пользователю. Поэтому переход в главное окно всегда защищён.
+        if not success:
             self.stacked_widget.setCurrentWidget(self.setup_screen)
+            self.confirm_btn.setEnabled(True)
             self.show_error(message)
+            return
+
+        self.confirm_btn.setEnabled(True)
+        QTimer.singleShot(300, self._safe_open_main_window)
+
+    def _safe_open_main_window(self):
+        try:
+            self._open_main_window()
+        except Exception as e:
+            traceback.print_exc()
+            self.stacked_widget.setCurrentWidget(self.setup_screen)
+            self.show_error(
+                "Не удалось открыть основное окно NeboProject:\n"
+                f"{type(e).__name__}: {e}"
+            )
 
     def check_bot_and_chat(self, bot_id_val, chat_id_val, need_verification_message=True):
         try:
@@ -685,10 +707,14 @@ class SetupWindow(BaseWindow):
         self.setMinimumSize(800, 560)
         self.stacked_widget.setCurrentWidget(self._main_screen)
 
-        self._main_screen.setup_initial_display()
-        if not self._main_screen.log_monitor.isRunning():
-            self._main_screen.log_monitor.start()
-        self._main_screen.update_stats()
+        try:
+            self._main_screen.setup_initial_display()
+            if not self._main_screen.log_monitor.isRunning():
+                self._main_screen.log_monitor.start()
+            self._main_screen.update_stats()
+        except Exception as e:
+            traceback.print_exc()
+            raise RuntimeError(f"Ошибка запуска мониторинга логов: {e}") from e
 
     def closeEvent(self, event):
         if getattr(self, '_main_screen', None) is not None:
