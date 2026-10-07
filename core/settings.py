@@ -89,6 +89,7 @@ def save_settings(settings: AppSettings) -> AppSettings:
         settings.log_display_mode or 'all',
         settings.theme or 'Небо',
         settings.bind_keycode,
+        settings.bind_key or '',
         settings.verified_bot_id or '',
         settings.verified_chat_id or '',
         settings.tg_proxy_type or 'none',
