@@ -161,6 +161,67 @@ class MainWindow(QWidget):
             self.opacity_slider.setStyleSheet(f"QSlider::groove:horizontal {{ height: 5px; background: #3B1A20; border-radius: 3px; }} QSlider::sub-page:horizontal {{ background: #FF1738; border-radius: 3px; }} QSlider::handle:horizontal {{ background: #FF1738; width: 15px; height: 15px; margin: -5px 0; border-radius: 8px; }}")
         self.update()
 
+    def _on_panel_opacity_changed(self, value):
+        """Update panel/background opacity live and persist it safely."""
+        try:
+            self.panel_opacity = max(10, min(100, int(value)))
+            if hasattr(self, "opacity_value"):
+                self.opacity_value.setText(f"{self.panel_opacity}%")
+            self.setStyleSheet(self._get_theme_stylesheet())
+            self._apply_theme(self.current_theme)
+            update_settings(panel_opacity=self.panel_opacity)
+        except Exception as e:
+            gui_print(f"[ERROR] Ошибка изменения прозрачности панелей: {e}")
+
+    def _on_tray_mode_changed(self, state):
+        """Toggle hiding from taskbar without making startup dependent on tray."""
+        try:
+            self.hide_from_taskbar = bool(state)
+            update_settings(hide_from_taskbar=self.hide_from_taskbar)
+            self._apply_taskbar_mode()
+            if self.hide_from_taskbar:
+                self._setup_tray()
+        except Exception as e:
+            gui_print(f"[ERROR] Ошибка режима панели задач: {e}")
+
+    def _setup_tray(self):
+        """Create a safe system-tray icon on demand."""
+        if self.tray_icon is not None:
+            return
+        try:
+            if not QSystemTrayIcon.isSystemTrayAvailable():
+                gui_print("[WARNING] Системный трей недоступен.")
+                return
+            icon_path = resource_path(os.path.join('path', 'icon.ico'))
+            icon = QIcon(icon_path) if os.path.exists(icon_path) else self.windowIcon()
+            self.tray_icon = QSystemTrayIcon(icon, self)
+            self.tray_icon.setToolTip("NeboProject")
+            self.tray_menu = QMenu(self)
+            show_action = QAction("Показать NeboProject", self)
+            show_action.triggered.connect(self._restore_from_tray)
+            exit_action = QAction("Выход", self)
+            exit_action.triggered.connect(self.close)
+            self.tray_menu.addAction(show_action)
+            self.tray_menu.addSeparator()
+            self.tray_menu.addAction(exit_action)
+            self.tray_icon.setContextMenu(self.tray_menu)
+            self.tray_icon.activated.connect(self._tray_activated)
+            self.tray_icon.show()
+        except Exception as e:
+            self.tray_icon = None
+            self.tray_menu = None
+            gui_print(f"[WARNING] Не удалось создать системный трей: {e}")
+
+    def _tray_activated(self, reason):
+        if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick):
+            self._restore_from_tray()
+
+    def _restore_from_tray(self):
+        self.showNormal()
+        self.show()
+        self.raise_()
+        self.activateWindow()
+
     def _load_platform(self):
         global platform, vk_user_id
         try:
