@@ -65,7 +65,6 @@ class SetupWindow(BaseWindow):
         self._update_theme_specific_styles()
         self._load_verification_info()
         QTimer.singleShot(100, lambda: self._on_platform_changed(self.platform_combo.currentText()))
-        QTimer.singleShot(350, self._ensure_saved_tray)
 
     def _setup_tray(self):
         if self.tray_icon is not None:
@@ -110,12 +109,8 @@ class SetupWindow(BaseWindow):
         self.activateWindow()
 
     def _ensure_saved_tray(self):
-        try:
-            if bool(load_settings().hide_from_taskbar):
-                self._setup_tray()
-                self.apply_taskbar_mode(True)
-        except Exception as exc:
-            print(f"[WARNING] Не удалось восстановить режим трея: {exc}")
+        # Tray/taskbar is initialized only after the main window is ready.
+        return
 
     def _exit_from_tray(self):
         self.close()
@@ -425,11 +420,9 @@ class SetupWindow(BaseWindow):
         if self.platform_combo.currentText() == "Telegram":
             self.telegram_widget.setVisible(True)
             self.vk_widget.setVisible(False)
-            self._load_telegram_settings()
         else:
             self.telegram_widget.setVisible(False)
             self.vk_widget.setVisible(True)
-            self._load_vk_id()
 
     def _create_setup_screen(self):
         screen = QWidget()
@@ -657,11 +650,9 @@ class SetupWindow(BaseWindow):
         if platform_name == "Telegram":
             self.telegram_widget.setVisible(True)
             self.vk_widget.setVisible(False)
-            self._load_telegram_settings()
         else:
             self.telegram_widget.setVisible(False)
             self.vk_widget.setVisible(True)
-            self._load_vk_id()
         self.telegram_widget.updateGeometry()
         self.vk_widget.updateGeometry()
         self.vk_id_input.updateGeometry()
@@ -920,7 +911,6 @@ class SetupWindow(BaseWindow):
         self.setMinimumSize(800, 560)
         self.stacked_widget.setCurrentWidget(self._main_screen)
 
-        self._setup_tray()
         try:
             self._main_screen.setup_initial_display()
             if not self._main_screen.log_monitor.isRunning():
