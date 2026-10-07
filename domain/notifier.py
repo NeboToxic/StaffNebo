@@ -1,6 +1,8 @@
 import os
 import re
 import time as tm
+
+import requests
 from dataclasses import dataclass
 from typing import Optional
 
@@ -11,6 +13,43 @@ from core.paths import screenshot_path
 from core.settings import load_settings
 from domain.events import LABELS, PunishmentType
 from domain.worker_client import send_vk_message
+
+
+def _telegram_error(exc: Exception, bot_token: str = '') -> str:
+    """Return a user-safe Telegram error without exposing the bot token."""
+    text = str(exc)
+    if bot_token:
+        text = text.replace(bot_token, '<TOKEN>')
+    text = re.sub(r'(bot)\d{6,}:[A-Za-z0-9_-]+', r'\1<TOKEN>', text)
+    if isinstance(exc, requests.exceptions.ConnectTimeout):
+        return 'Не удалось подключиться к api.telegram.org: превышено время ожидания. Проверьте интернет, VPN/прокси или firewall.'
+    if isinstance(exc, requests.exceptions.ConnectionError):
+        return 'Не удалось подключиться к Telegram API. Проверьте интернет, VPN/прокси или firewall.'
+    if isinstance(exc, requests.exceptions.Timeout):
+        return 'Telegram API не ответил вовремя. Проверьте интернет, VPN/прокси или firewall.'
+    return text
+
+
+def _telegram_api_url(token: str, method: str) -> str:
+    base = os.getenv('NEBO_TELEGRAM_API_URL', 'https://api.telegram.org').rstrip('/')
+    return f'{base}/bot{token}/{method}'
+
+
+def _send_telegram_photo(filename: str, token: str, chat: str, caption: str) -> None:
+    # requests respects HTTPS_PROXY/HTTP_PROXY from the environment, which also
+    # makes the app usable on PCs where direct access to Telegram is blocked.
+    with open(filename, 'rb') as photo_file:
+        response = requests.post(
+            _telegram_api_url(str(token), 'sendPhoto'),
+            data={'chat_id': int(chat), 'caption': caption, 'parse_mode': 'html'},
+            files={'photo': (os.path.basename(filename), photo_file, 'image/png')},
+            timeout=(10, 45),
+        )
+    response.raise_for_status()
+    payload = response.json()
+    if not payload.get('ok'):
+        raise RuntimeError(payload.get('description') or 'Telegram API вернул ошибку')
+
 
 
 @dataclass
@@ -100,13 +139,10 @@ class TelegramNotifier:
             if should_stop and should_stop():
                 return False, ''
             try:
-                bot = telebot.TeleBot(str(bot_token))
-                with open(filename, 'rb') as photo_file:
-                    bot.send_photo(
-                        int(chat), photo_file,
-                        '<em>С любовью, NeboProject</em>',
-                        parse_mode='html',
-                    )
+                _send_telegram_photo(
+                    filename, str(bot_token), str(chat),
+                    '<em>С любовью, NeboProject</em>',
+                )
                 try:
                     os.remove(filename)
                 except Exception:
@@ -114,12 +150,10 @@ class TelegramNotifier:
                 return True, '[SYSTEM] Скриншот отправлен в Telegram'
             except Exception as e:
                 if attempt == 3:
-                    try:
-                        os.remove(filename)
-                    except Exception:
-                        pass
-                    return False, f'[ERROR] Не удалось отправить скриншот в Telegram: {e}'
-                tm.sleep(2)
+                    # Do NOT delete the screenshot when Telegram is unreachable.
+                    # It can be sent again after the network is restored.
+                    return False, f'[ERROR] Не удалось отправить скриншот в Telegram: {_telegram_error(e, str(bot_token))}'
+                tm.sleep(3)
         return False, '[ERROR] Не удалось отправить скриншот в Telegram'
 
 
