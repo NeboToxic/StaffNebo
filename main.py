@@ -57,4 +57,9 @@ if __name__ == "__main__":
         print(f"[ERROR] GUI crashed: {e}")
         import traceback
         traceback.print_exc()
+        try:
+            QMessageBox.critical(None, "NeboProject — ошибка запуска",
+                                  f"Не удалось запустить приложение.\n\n{type(e).__name__}: {e}")
+        except Exception:
+            pass
         cleanup()

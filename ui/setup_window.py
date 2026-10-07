@@ -5,7 +5,7 @@ import traceback
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QLineEdit, QComboBox, QCheckBox, QStackedWidget,
-    QProgressBar, QSlider, QFileDialog, QSizePolicy, QSystemTrayIcon, QMenu, QAction
+    QProgressBar, QSlider, QFileDialog, QSizePolicy
 )
 from PyQt5.QtCore import Qt, QRectF, QTimer, QPointF
 from PyQt5.QtGui import QPainter, QColor, QPen, QIcon, QImage, QPainterPath
@@ -64,27 +64,36 @@ class SetupWindow(BaseWindow):
         self._load_existing_config()
         self._update_theme_specific_styles()
         self._load_verification_info()
-        self._setup_tray()
+        # Tray is initialized only after the main window is opened. This avoids
+        # startup failures on systems where the tray service is unavailable.
         QTimer.singleShot(100, lambda: self._on_platform_changed(self.platform_combo.currentText()))
 
     def _setup_tray(self):
-        if not QSystemTrayIcon.isSystemTrayAvailable():
+        if self.tray_icon is not None:
             return
-        icon_path = resource_path(os.path.join('path', 'icon.ico'))
-        icon = QIcon(icon_path) if os.path.exists(icon_path) else QIcon()
-        self.tray_icon = QSystemTrayIcon(icon, self)
-        self.tray_icon.setToolTip("NeboProject")
-        self.tray_menu = QMenu(self)
-        show_action = QAction("Показать NeboProject", self)
-        show_action.triggered.connect(self._restore_from_tray)
-        exit_action = QAction("Выход", self)
-        exit_action.triggered.connect(self._exit_from_tray)
-        self.tray_menu.addAction(show_action)
-        self.tray_menu.addSeparator()
-        self.tray_menu.addAction(exit_action)
-        self.tray_icon.setContextMenu(self.tray_menu)
-        self.tray_icon.activated.connect(self._tray_activated)
-        self.tray_icon.show()
+        try:
+            from PyQt5.QtWidgets import QSystemTrayIcon, QMenu, QAction
+            if not QSystemTrayIcon.isSystemTrayAvailable():
+                return
+            icon_path = resource_path(os.path.join('path', 'icon.ico'))
+            icon = QIcon(icon_path) if os.path.exists(icon_path) else QIcon()
+            self.tray_icon = QSystemTrayIcon(icon, self)
+            self.tray_icon.setToolTip("NeboProject")
+            self.tray_menu = QMenu(self)
+            show_action = QAction("Показать NeboProject", self)
+            show_action.triggered.connect(self._restore_from_tray)
+            exit_action = QAction("Выход", self)
+            exit_action.triggered.connect(self._exit_from_tray)
+            self.tray_menu.addAction(show_action)
+            self.tray_menu.addSeparator()
+            self.tray_menu.addAction(exit_action)
+            self.tray_icon.setContextMenu(self.tray_menu)
+            self.tray_icon.activated.connect(self._tray_activated)
+            self.tray_icon.show()
+        except Exception as exc:
+            self.tray_icon = None
+            self.tray_menu = None
+            print(f"[WARNING] Не удалось инициализировать системный трей: {exc}")
 
     def _tray_activated(self, reason):
         if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick):
@@ -107,7 +116,10 @@ class SetupWindow(BaseWindow):
             self.showMinimized()
 
     def apply_taskbar_mode(self, hidden: bool):
-        set_taskbar_hidden(self, hidden)
+        try:
+            set_taskbar_hidden(self, hidden)
+        except Exception as exc:
+            print(f"[WARNING] Не удалось изменить режим панели задач: {exc}")
 
     def closeEvent(self, event):
         if self.tray_icon is not None:
@@ -882,6 +894,7 @@ class SetupWindow(BaseWindow):
         self.setMinimumSize(800, 560)
         self.stacked_widget.setCurrentWidget(self._main_screen)
 
+        self._setup_tray()
         try:
             self._main_screen.setup_initial_display()
             if not self._main_screen.log_monitor.isRunning():
