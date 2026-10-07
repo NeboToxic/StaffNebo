@@ -66,6 +66,9 @@ def init_schema():
             ('tg_proxy_port', "TEXT NOT NULL DEFAULT ''"),
             ('tg_proxy_username', "TEXT NOT NULL DEFAULT ''"),
             ('tg_proxy_password', "TEXT NOT NULL DEFAULT ''"),
+            ('panel_opacity', "INTEGER NOT NULL DEFAULT 78"),
+            ('hide_from_taskbar', "INTEGER NOT NULL DEFAULT 0"),
+            ('startup_windows', "INTEGER NOT NULL DEFAULT 0"),
         ):
             try:
                 conn.execute(f"ALTER TABLE settings ADD COLUMN {column} {definition}")

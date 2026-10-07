@@ -202,7 +202,7 @@ class VkNotifier:
 
     def send_screenshot(self, filename: str, vk_user_id: str = '', should_stop=None) -> tuple:
         random_id = int(tm.time() * 1000)
-        for attempt in range(1, 3):
+        for attempt in range(1, 4):
             if should_stop and should_stop():
                 return False, ''
             try:

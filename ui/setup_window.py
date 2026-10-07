@@ -5,7 +5,7 @@ import traceback
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QLineEdit, QComboBox, QCheckBox, QStackedWidget,
-    QProgressBar, QSlider, QFileDialog, QSizePolicy
+    QProgressBar, QSlider, QFileDialog, QSizePolicy, QSystemTrayIcon, QMenu, QAction
 )
 from PyQt5.QtCore import Qt, QRectF, QTimer, QPointF
 from PyQt5.QtGui import QPainter, QColor, QPen, QIcon, QImage, QPainterPath
@@ -18,6 +18,7 @@ from core.helpers import gui_print
 from threads.validation import ValidationThread
 from core.paths import resource_path, data_path
 from core.telegram_proxy import build_proxy_url, requests_proxies
+from core.windows_integration import set_startup_enabled, is_startup_enabled, set_taskbar_hidden
 import requests
 
 
@@ -45,6 +46,8 @@ class SetupWindow(BaseWindow):
         self.validation_data = {}
         self.old_bot_id = ''
         self.old_chat_id = ''
+        self.tray_icon = None
+        self.tray_menu = None
 
         self.stacked_widget = QStackedWidget()
         main_layout = QVBoxLayout(self)
@@ -61,8 +64,65 @@ class SetupWindow(BaseWindow):
         self._load_existing_config()
         self._update_theme_specific_styles()
         self._load_verification_info()
-
+        self._setup_tray()
         QTimer.singleShot(100, lambda: self._on_platform_changed(self.platform_combo.currentText()))
+
+    def _setup_tray(self):
+        if not QSystemTrayIcon.isSystemTrayAvailable():
+            return
+        icon_path = resource_path(os.path.join('path', 'icon.ico'))
+        icon = QIcon(icon_path) if os.path.exists(icon_path) else QIcon()
+        self.tray_icon = QSystemTrayIcon(icon, self)
+        self.tray_icon.setToolTip("NeboProject")
+        self.tray_menu = QMenu(self)
+        show_action = QAction("Показать NeboProject", self)
+        show_action.triggered.connect(self._restore_from_tray)
+        exit_action = QAction("Выход", self)
+        exit_action.triggered.connect(self._exit_from_tray)
+        self.tray_menu.addAction(show_action)
+        self.tray_menu.addSeparator()
+        self.tray_menu.addAction(exit_action)
+        self.tray_icon.setContextMenu(self.tray_menu)
+        self.tray_icon.activated.connect(self._tray_activated)
+        self.tray_icon.show()
+
+    def _tray_activated(self, reason):
+        if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick):
+            self._restore_from_tray()
+
+    def _restore_from_tray(self):
+        self.showNormal()
+        self.show()
+        self.raise_()
+        self.activateWindow()
+
+    def minimize_to_tray(self):
+        try:
+            hidden = bool(load_settings().hide_from_taskbar)
+        except Exception:
+            hidden = False
+        if hidden and self.tray_icon is not None:
+            self.hide()
+        else:
+            self.showMinimized()
+
+    def apply_taskbar_mode(self, hidden: bool):
+        set_taskbar_hidden(self, hidden)
+
+    def closeEvent(self, event):
+        if self.tray_icon is not None:
+            self.tray_icon.hide()
+        if getattr(self, '_main_screen', None) is not None:
+            try:
+                self._main_screen.shutdown()
+            except Exception:
+                pass
+        if hasattr(self, 'validation_thread') and self.validation_thread is not None:
+            try:
+                self.validation_thread.stop()
+            except Exception:
+                pass
+        super().closeEvent(event)
 
     def _load_theme(self):
         theme = load_settings().theme
@@ -300,6 +360,8 @@ class SetupWindow(BaseWindow):
                     self.logs_combo.setCurrentText("Свой путь")
                     self.custom_logs_input.setText(logs_path)
             self.sound_checkbox.setChecked(bool(settings.use_sound))
+            if hasattr(self, "startup_checkbox"):
+                self.startup_checkbox.setChecked(bool(getattr(settings, "startup_windows", False)) and is_startup_enabled())
             try:
                 self.delay_slider.setValue(int(float(settings.screenshot_delay) * 10))
             except (ValueError, TypeError):
@@ -495,6 +557,15 @@ class SetupWindow(BaseWindow):
         sound_layout.addStretch()
         content_layout.addLayout(sound_layout)
 
+        self.startup_checkbox = QCheckBox("Запускать приложение при запуске Windows")
+        self.startup_checkbox.setChecked(is_startup_enabled())
+        self.startup_checkbox.setStyleSheet(checkbox_style(self.current_theme))
+        startup_layout = QHBoxLayout()
+        startup_layout.addStretch()
+        startup_layout.addWidget(self.startup_checkbox)
+        startup_layout.addStretch()
+        content_layout.addLayout(startup_layout)
+
         self.confirm_btn = QPushButton("Подтвердить")
         self.confirm_btn.setFixedHeight(40)
         self.confirm_btn.setMinimumWidth(200)
@@ -688,6 +759,10 @@ class SetupWindow(BaseWindow):
             existing.chat_id = chat_saved
             existing.vk_user_id = vk_saved
             existing.vk_token = vk_token_saved
+            existing.startup_windows = self.startup_checkbox.isChecked()
+            if not set_startup_enabled(existing.startup_windows):
+                if existing.startup_windows:
+                    raise RuntimeError("Не удалось включить автозапуск Windows")
             existing.tg_proxy_type = proxy_type_val if platform_choice == 'Telegram' else existing.tg_proxy_type
             existing.tg_proxy_host = proxy_host_val if platform_choice == 'Telegram' else existing.tg_proxy_host
             existing.tg_proxy_port = proxy_port_val if platform_choice == 'Telegram' else existing.tg_proxy_port
@@ -815,13 +890,3 @@ class SetupWindow(BaseWindow):
         except Exception as e:
             traceback.print_exc()
             raise RuntimeError(f"Ошибка запуска мониторинга логов: {e}") from e
-
-    def closeEvent(self, event):
-        if getattr(self, '_main_screen', None) is not None:
-            self._main_screen.shutdown()
-        if hasattr(self, 'validation_thread') and self.validation_thread is not None:
-            try:
-                self.validation_thread.stop()
-            except Exception:
-                pass
-        super().closeEvent(event)

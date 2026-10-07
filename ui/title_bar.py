@@ -59,7 +59,10 @@ class TitleBar(QWidget):
     def _minimize(self):
         window = self.window()
         if window is not None:
-            window.showMinimized()
+            if hasattr(window, 'minimize_to_tray'):
+                window.minimize_to_tray()
+            else:
+                window.showMinimized()
 
     def _maximize(self):
         window = self.window()

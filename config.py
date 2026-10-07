@@ -1,5 +1,5 @@
 APP_NAME = "NeboProject"
-VERSION = "1.1.8"
+VERSION = "1.2.0"
 APP_AUTHOR = "Personal Edition"
 
 def check_config():

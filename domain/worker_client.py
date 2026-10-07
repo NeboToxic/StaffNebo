@@ -63,23 +63,56 @@ def send_vk_message(token: str, peer_id: str, text: str, photo_path: str = None,
                 raise RuntimeError(f"VK upload server не вернул upload_url: {upload_server}")
 
             image_buffer = _prepare_photo(photo_path)
-            if image_buffer is not None:
-                file_tuple = (f"nebo_{uuid.uuid4().hex}.jpg", image_buffer, "image/jpeg")
-                uploaded_response = session.post(
-                    upload_url,
-                    files={"photo": file_tuple},
-                    timeout=(5, 25),
-                )
-            else:
+            if image_buffer is None:
                 with open(photo_path, "rb") as f:
+                    image_data = f.read()
+                upload_name = os.path.basename(photo_path)
+                upload_mime = "image/png"
+            else:
+                image_data = image_buffer.getvalue()
+                upload_name = f"nebo_{uuid.uuid4().hex}.jpg"
+                upload_mime = "image/jpeg"
+
+            # VK upload servers can occasionally return 502/503/504.
+            # Retry the upload itself with a fresh upload URL instead of
+            # repeating the whole message flow blindly.
+            uploaded = None
+            last_upload_error = None
+            for upload_attempt in range(1, 4):
+                try:
+                    if upload_attempt > 1:
+                        upload_server = _vk_call(
+                            session,
+                            "photos.getMessagesUploadServer",
+                            {"peer_id": peer_id, "access_token": token, "v": VK_VERSION},
+                            timeout=(5, 10),
+                        )
+                        upload_url = upload_server.get("upload_url")
+                        if not upload_url:
+                            raise RuntimeError(f"VK upload server не вернул upload_url: {upload_server}")
+
                     uploaded_response = session.post(
                         upload_url,
-                        files={"photo": (os.path.basename(photo_path), f, "image/png")},
-                        timeout=(5, 25),
+                        files={"photo": (upload_name, image_data, upload_mime)},
+                        timeout=(5, 45),
                     )
+                    if uploaded_response.status_code in (502, 503, 504):
+                        raise requests.HTTPError(
+                            f"VK upload server вернул HTTP {uploaded_response.status_code}"
+                        )
+                    uploaded_response.raise_for_status()
+                    uploaded = uploaded_response.json()
+                    if not uploaded.get("photo") or uploaded.get("server") is None or not uploaded.get("hash"):
+                        raise RuntimeError(f"VK загрузка фото вернула неполные данные: {uploaded}")
+                    break
+                except Exception as exc:
+                    last_upload_error = exc
+                    if upload_attempt < 3:
+                        import time
+                        time.sleep(upload_attempt)
 
-            uploaded_response.raise_for_status()
-            uploaded = uploaded_response.json()
+            if uploaded is None:
+                raise RuntimeError(f"Не удалось загрузить фото в VK после 3 попыток: {last_upload_error}")
             if not uploaded.get("photo") or uploaded.get("server") is None or not uploaded.get("hash"):
                 raise RuntimeError(f"VK загрузка фото вернула неполные данные: {uploaded}")
 

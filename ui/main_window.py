@@ -4,10 +4,10 @@ import subprocess
 import datetime
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QTextEdit, QMenu, QAction, QSizePolicy, QFrame
+    QTextEdit, QMenu, QAction, QSizePolicy, QFrame, QCheckBox, QSlider, QSystemTrayIcon, QStyle
 )
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QDateTime
-from PyQt5.QtGui import QPainter, QPixmap
+from PyQt5.QtGui import QPainter, QPixmap, QIcon
 
 from ui.title_bar import TitleBar
 from ui.theme_manager import (
@@ -16,6 +16,8 @@ from ui.theme_manager import (
 )
 from core.helpers import gui_print, make_sound
 from core.settings import load_settings, update_settings
+from core.windows_integration import set_taskbar_hidden
+from core.paths import resource_path
 from core.globals import (
     gui_messages_buffer, platform, vk_user_id,
     my_nickname, using_sounds_in_program,
@@ -40,9 +42,11 @@ class MainWindow(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        self.themes = THEMES
-
-        self.current_theme = self._load_theme()
+        self.themes = {'Небо': THEMES['Небо']}
+        settings = load_settings()
+        self.current_theme = 'Небо'
+        self.panel_opacity = max(0, min(100, int(getattr(settings, 'panel_opacity', 78))))
+        self.hide_from_taskbar = bool(getattr(settings, 'hide_from_taskbar', False))
         self.setStyleSheet(self._get_theme_stylesheet())
 
         self.ops = OperationQueue(self, processing_delay=1.5)
@@ -65,6 +69,8 @@ class MainWindow(QWidget):
         self._hotkey_held = False
         self._hotkey_shot_armed = True
         self._binding_listener_active = False
+        self.tray_icon = None
+        self.tray_menu = None
 
         self._init_ui()
         self._flush_message_buffer()
@@ -74,12 +80,27 @@ class MainWindow(QWidget):
         self.bind_captured.connect(self._on_bind_captured)
         self._load_bind()
         self._apply_theme(self.current_theme)
+        QTimer.singleShot(0, self._apply_taskbar_mode)
         self._load_platform()
 
         self.logs_path = put_do_logov
         self.log_monitor = LogMonitorThread(self.logs_path)
         self.log_monitor.update_signal.connect(self.log_message)
         self.log_monitor.log_line_signal.connect(self.process_log_line)
+
+    def _apply_taskbar_mode(self):
+        top = self.window()
+        if hasattr(top, 'apply_taskbar_mode'):
+            top.apply_taskbar_mode(self.hide_from_taskbar)
+        else:
+            set_taskbar_hidden(top, self.hide_from_taskbar)
+
+    def minimize_to_tray(self):
+        top = self.window()
+        if hasattr(top, 'minimize_to_tray'):
+            top.minimize_to_tray()
+        else:
+            top.showMinimized()
 
     def _load_theme(self):
         t = load_settings().theme
@@ -94,7 +115,7 @@ class MainWindow(QWidget):
             gui_print(f"[ERROR] Ошибка сохранения темы: {e}")
 
     def _get_theme_stylesheet(self):
-        return main_window_stylesheet(self.current_theme)
+        return main_window_stylesheet(self.current_theme, self.panel_opacity)
 
     def _show_theme_menu(self):
         m = QMenu(self)
@@ -121,20 +142,23 @@ class MainWindow(QWidget):
             self.title_bar.apply_theme(self.current_theme)
         toolbar = toolbar_button_style(self.current_theme)
         self.log_mode_btn.setStyleSheet(toolbar)
-        self.theme_btn.setStyleSheet(toolbar)
         self.bind_label.setStyleSheet(bind_label_style(self.current_theme))
         t = self.themes[self.current_theme]
-        stat_base = (f"background: {t['secondary']}; border: 1px solid {t['secondary_hover']}; "
+        alpha = max(0, min(100, self.panel_opacity)) * 255 // 100
+        stat_bg = f"rgba(17,17,22,{alpha})" if self.current_theme == 'Небо' else t['secondary']
+        stat_base = (f"background: {stat_bg}; border: 1px solid {t['secondary_hover']}; "
                      f"border-radius: 12px; padding: 13px 15px; min-height: 52px; font-size: 12px; font-weight: 800;")
         self.mutes_label.setStyleSheet(stat_base + f"color: {t['accent']};")
         self.warns_label.setStyleSheet(stat_base + f"color: {t['warning']};")
         self.kicks_label.setStyleSheet(stat_base + f"color: {t['error']};")
         self.session_timer_label.setStyleSheet(session_label_style(self.current_theme))
-        self.log_output.setStyleSheet(log_output_style(self.current_theme))
+        self.log_output.setStyleSheet(log_output_style(self.current_theme, self.panel_opacity))
         if hasattr(self, 'status_label'):
             self.status_label.setStyleSheet(f"color: {self.themes[self.current_theme]['accent']}; background: transparent; font-size: 10px; font-weight: bold; padding: 4px 8px;")
         if hasattr(self, 'bind_label'):
             self.bind_label.setStyleSheet(bind_label_style(self.current_theme))
+        if hasattr(self, 'opacity_slider'):
+            self.opacity_slider.setStyleSheet(f"QSlider::groove:horizontal {{ height: 5px; background: #3B1A20; border-radius: 3px; }} QSlider::sub-page:horizontal {{ background: #FF1738; border-radius: 3px; }} QSlider::handle:horizontal {{ background: #FF1738; width: 15px; height: 15px; margin: -5px 0; border-radius: 8px; }}")
         self.update()
 
     def _load_platform(self):
@@ -165,12 +189,6 @@ class MainWindow(QWidget):
         self.log_mode_btn.clicked.connect(self._toggle_log_display_mode)
         self.title_bar.add_widget(self.log_mode_btn)
 
-        self.theme_btn = QPushButton("Темы")
-        self.theme_btn.setFixedSize(100, 28)
-        self.theme_btn.setToolTip("Сменить тему")
-        self.theme_btn.clicked.connect(self._show_theme_menu)
-        self.title_bar.add_widget(self.theme_btn)
-
         self.minimize_btn = self.title_bar.minimize_btn
         self.maximize_btn = self.title_bar.maximize_btn
         self.close_btn = self.title_bar.close_btn
@@ -194,7 +212,7 @@ class MainWindow(QWidget):
         header = QLabel("Панель управления")
         header.setObjectName("pageTitle")
         hero_title_box.addWidget(header)
-        subtitle = QLabel("Автоматический контроль действий модератора и обработка latest.log")
+        subtitle = QLabel("Небо любит Нику")
         subtitle.setObjectName("pageSubtitle")
         hero_title_box.addWidget(subtitle)
         hero.addLayout(hero_title_box, 1)
@@ -260,6 +278,29 @@ class MainWindow(QWidget):
         shot_btn.clicked.connect(self.take_screenshot)
         bottom.addWidget(shot_btn)
         content_layout.addLayout(bottom)
+
+        controls = QHBoxLayout()
+        controls.setContentsMargins(0, 0, 0, 0)
+        controls.setSpacing(8)
+        controls.addStretch()
+        opacity_title = QLabel("Фон панелей:")
+        opacity_title.setObjectName("panelControlLabel")
+        controls.addWidget(opacity_title)
+        self.opacity_slider = QSlider(Qt.Horizontal)
+        self.opacity_slider.setRange(10, 100)
+        self.opacity_slider.setValue(self.panel_opacity)
+        self.opacity_slider.setFixedWidth(130)
+        self.opacity_slider.valueChanged.connect(self._on_panel_opacity_changed)
+        controls.addWidget(self.opacity_slider)
+        self.opacity_value = QLabel(f"{self.panel_opacity}%")
+        self.opacity_value.setMinimumWidth(42)
+        self.opacity_value.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        controls.addWidget(self.opacity_value)
+        self.tray_checkbox = QCheckBox("Скрывать в панели задач")
+        self.tray_checkbox.setChecked(self.hide_from_taskbar)
+        self.tray_checkbox.stateChanged.connect(self._on_tray_mode_changed)
+        controls.addWidget(self.tray_checkbox)
+        content_layout.addLayout(controls)
         body_layout.addWidget(content, 1)
 
         # Правая панель в стиле референса: статус, часы, быстрые действия, статистика и цитата.
@@ -288,25 +329,6 @@ class MainWindow(QWidget):
         self.clock_day_label.setObjectName("mutedText")
         status_layout.addWidget(self.clock_day_label)
         side_layout.addWidget(status_card)
-
-        quick_card = QFrame()
-        quick_card.setObjectName("sideCard")
-        quick_layout = QVBoxLayout(quick_card)
-        quick_layout.setContentsMargins(14, 14, 14, 14)
-        quick_title = QLabel("Быстрые действия")
-        quick_title.setObjectName("sideTitle")
-        quick_layout.addWidget(quick_title)
-        quick_bind = QPushButton("⌨  Изменить бинд")
-        quick_bind.setObjectName("primaryButton")
-        quick_bind.setFixedHeight(42)
-        quick_bind.clicked.connect(self._start_binding)
-        quick_layout.addWidget(quick_bind)
-        quick_shot = QPushButton("▣  Сделать скриншот")
-        quick_shot.setObjectName("secondaryButton")
-        quick_shot.setFixedHeight(42)
-        quick_shot.clicked.connect(self.take_screenshot)
-        quick_layout.addWidget(quick_shot)
-        side_layout.addWidget(quick_card)
 
         day_card = QFrame()
         day_card.setObjectName("sideCard")
@@ -835,6 +857,10 @@ class MainWindow(QWidget):
 
     def _play_sound(self):
         make_sound()
+
+    def closeEvent(self, event):
+        self.shutdown()
+        event.accept()
 
     def shutdown(self):
         try:

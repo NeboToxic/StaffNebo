@@ -28,6 +28,9 @@ class AppSettings:
     tg_proxy_port: str = ''
     tg_proxy_username: str = ''
     tg_proxy_password: str = ''
+    panel_opacity: int = 78
+    hide_from_taskbar: bool = False
+    startup_windows: bool = False
 
 
 _COLUMNS = (
@@ -35,6 +38,7 @@ _COLUMNS = (
     'use_sound', 'screenshot_delay', 'log_display_mode', 'theme',
     'bind_keycode', 'bind_key', 'verified_bot_id', 'verified_chat_id',
     'tg_proxy_type', 'tg_proxy_host', 'tg_proxy_port', 'tg_proxy_username', 'tg_proxy_password',
+    'panel_opacity', 'hide_from_taskbar', 'startup_windows',
 )
 
 
@@ -71,6 +75,9 @@ def load_settings() -> AppSettings:
         tg_proxy_port=row['tg_proxy_port'] if 'tg_proxy_port' in row.keys() else '',
         tg_proxy_username=row['tg_proxy_username'] if 'tg_proxy_username' in row.keys() else '',
         tg_proxy_password=row['tg_proxy_password'] if 'tg_proxy_password' in row.keys() else '',
+        panel_opacity=int(row['panel_opacity'] if 'panel_opacity' in row.keys() and row['panel_opacity'] is not None else 78),
+        hide_from_taskbar=bool(row['hide_from_taskbar']) if 'hide_from_taskbar' in row.keys() else False,
+        startup_windows=bool(row['startup_windows']) if 'startup_windows' in row.keys() else False,
     )
 
 
@@ -97,6 +104,9 @@ def save_settings(settings: AppSettings) -> AppSettings:
         settings.tg_proxy_port or '',
         settings.tg_proxy_username or '',
         settings.tg_proxy_password or '',
+        max(0, min(100, int(settings.panel_opacity))),
+        1 if settings.hide_from_taskbar else 0,
+        1 if settings.startup_windows else 0,
     )
     assignments = ', '.join(f'{col} = ?' for col in _COLUMNS)
     with connect() as conn:

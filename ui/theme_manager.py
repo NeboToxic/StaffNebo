@@ -427,10 +427,12 @@ def bind_label_style(theme_name: str) -> str:
     )
 
 
-def log_output_style(theme_name: str) -> str:
+def log_output_style(theme_name: str, panel_opacity: int = 78) -> str:
     t = theme(theme_name)
+    alpha = max(0, min(100, int(panel_opacity))) * 255 // 100
+    panel = f"rgba(17,17,22,{alpha})" if theme_name == 'Небо' else f"rgba(255,255,255,{alpha})"
     return (
-        f"QTextEdit {{ background-color: {t['secondary']}; color: {t['text']}; "
+        f"QTextEdit {{ background-color: {panel}; color: {t['text']}; "
         f"border: 1px solid {t['secondary_hover']}; border-radius: 5px; padding: 10px; "
         f"font-family: 'Cascadia Code', 'Courier New', monospace; font-size: 12px; "
         f"selection-background-color: {t['primary']}; }} "
@@ -441,11 +443,13 @@ def log_output_style(theme_name: str) -> str:
     )
 
 
-def main_window_stylesheet(theme_name: str) -> str:
+def main_window_stylesheet(theme_name: str, panel_opacity: int = 78) -> str:
     t = theme(theme_name)
     red = theme_name == "Небо"
-    panel = "rgba(9, 9, 13, 218)" if red else t['secondary']
-    panel2 = "rgba(18, 15, 18, 228)" if red else t['secondary']
+    alpha = max(0, min(100, int(panel_opacity))) * 255 // 100
+    alpha2 = max(0, min(100, int(panel_opacity + 8))) * 255 // 100
+    panel = f"rgba(9, 9, 13, {alpha})" if red else f"rgba(17, 17, 22, {alpha})"
+    panel2 = f"rgba(18, 15, 18, {alpha2})" if red else f"rgba(17, 17, 22, {alpha2})"
     border = "rgba(255, 42, 61, 115)" if red else t['secondary_hover']
     return f"""
     QWidget {{ color: {t['text']}; font-family: 'Segoe UI', Arial; }}
