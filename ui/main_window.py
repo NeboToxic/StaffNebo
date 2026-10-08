@@ -186,42 +186,21 @@ class MainWindow(QWidget):
             gui_print(f"[ERROR] Ошибка режима панели задач: {e}")
 
     def _setup_tray(self):
-        """Create a safe system-tray icon on demand."""
-        if self.tray_icon is not None:
-            return
-        try:
-            if not QSystemTrayIcon.isSystemTrayAvailable():
-                gui_print("[WARNING] Системный трей недоступен.")
-                return
-            icon_path = resource_path(os.path.join('path', 'icon.ico'))
-            icon = QIcon(icon_path) if os.path.exists(icon_path) else self.windowIcon()
-            self.tray_icon = QSystemTrayIcon(icon, self)
-            self.tray_icon.setToolTip("NeboProject")
-            self.tray_menu = QMenu(self)
-            show_action = QAction("Показать NeboProject", self)
-            show_action.triggered.connect(self._restore_from_tray)
-            exit_action = QAction("Выход", self)
-            exit_action.triggered.connect(self.close)
-            self.tray_menu.addAction(show_action)
-            self.tray_menu.addSeparator()
-            self.tray_menu.addAction(exit_action)
-            self.tray_icon.setContextMenu(self.tray_menu)
-            self.tray_icon.activated.connect(self._tray_activated)
-            self.tray_icon.show()
-        except Exception as e:
-            self.tray_icon = None
-            self.tray_menu = None
-            gui_print(f"[WARNING] Не удалось создать системный трей: {e}")
+        """Use the tray owned by SetupWindow (the actual top-level window)."""
+        top = self.window()
+        if top is not self and hasattr(top, "_setup_tray"):
+            return top._setup_tray()
+        return False
 
     def _tray_activated(self, reason):
-        if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick):
-            self._restore_from_tray()
+        top = self.window()
+        if top is not self and hasattr(top, "_tray_activated"):
+            return top._tray_activated(reason)
 
     def _restore_from_tray(self):
         top = self.window()
         if top is not self and hasattr(top, "_restore_from_tray"):
-            top._restore_from_tray()
-            return
+            return top._restore_from_tray()
         self.showNormal()
         self.setWindowState(self.windowState() & ~Qt.WindowMinimized)
         self.show()

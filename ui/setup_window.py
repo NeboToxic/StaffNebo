@@ -5,7 +5,7 @@ import traceback
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QLineEdit, QComboBox, QCheckBox, QStackedWidget,
-    QProgressBar, QSlider, QFileDialog, QSizePolicy, QSystemTrayIcon
+    QProgressBar, QSlider, QFileDialog, QSizePolicy, QSystemTrayIcon, QMenu, QAction
 )
 from PyQt5.QtCore import Qt, QRectF, QTimer, QPointF
 from PyQt5.QtGui import QPainter, QColor, QPen, QIcon, QImage, QPainterPath
@@ -70,38 +70,65 @@ class SetupWindow(BaseWindow):
         QTimer.singleShot(500, self._ensure_tray_if_needed)
 
     def _ensure_tray_if_needed(self):
+        """Keep the tray icon alive after startup/taskbar style changes.
+
+        Windows can initialize the notification area a little later than Qt.
+        Retry a few times instead of silently losing the icon.
+        """
         try:
             if bool(load_settings().hide_from_taskbar):
                 self._setup_tray()
+                if self.tray_icon is None:
+                    for delay in (800, 1600, 3000):
+                        QTimer.singleShot(delay, self._ensure_tray_if_needed)
         except Exception as exc:
             print(f"[WARNING] Не удалось восстановить системный трей: {exc}")
 
     def _setup_tray(self):
-        if self.tray_icon is not None:
-            return
+        """Create/show the single tray icon owned by the real top-level window."""
         try:
-            from PyQt5.QtWidgets import QMenu, QAction
             if not QSystemTrayIcon.isSystemTrayAvailable():
-                return
+                return False
+
+            # If it already exists, never recreate it: recreating tray icons is
+            # unreliable on Windows and may make the icon disappear.
+            if self.tray_icon is not None:
+                self.tray_icon.show()
+                self.tray_icon.setVisible(True)
+                return True
+
             icon_path = resource_path(os.path.join('path', 'icon.ico'))
             icon = QIcon(icon_path) if os.path.exists(icon_path) else QIcon()
+            if icon.isNull():
+                png_path = resource_path(os.path.join('path', 'icon.png'))
+                if os.path.exists(png_path):
+                    icon = QIcon(png_path)
+            if icon.isNull() and not self.windowIcon().isNull():
+                icon = self.windowIcon()
+
             self.tray_icon = QSystemTrayIcon(icon, self)
             self.tray_icon.setToolTip("NeboProject")
             self.tray_menu = QMenu(self)
+
             show_action = QAction("Показать NeboProject", self)
             show_action.triggered.connect(self._restore_from_tray)
             exit_action = QAction("Выход", self)
             exit_action.triggered.connect(self._exit_from_tray)
+
             self.tray_menu.addAction(show_action)
             self.tray_menu.addSeparator()
             self.tray_menu.addAction(exit_action)
             self.tray_icon.setContextMenu(self.tray_menu)
             self.tray_icon.activated.connect(self._tray_activated)
+
             self.tray_icon.show()
+            self.tray_icon.setVisible(True)
+            return True
         except Exception as exc:
             self.tray_icon = None
             self.tray_menu = None
             print(f"[WARNING] Не удалось инициализировать системный трей: {exc}")
+            return False
 
     def _tray_activated(self, reason):
         if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick):
@@ -134,7 +161,14 @@ class SetupWindow(BaseWindow):
 
     def apply_taskbar_mode(self, hidden: bool):
         try:
+            if hidden:
+                self._setup_tray()
             set_taskbar_hidden(self, hidden)
+            if hidden:
+                # Re-show the notification icon after Windows refreshes the
+                # window styles; this is important when WS_EX_TOOLWINDOW is set.
+                QTimer.singleShot(100, self._ensure_tray_if_needed)
+                QTimer.singleShot(500, self._ensure_tray_if_needed)
         except Exception as exc:
             print(f"[WARNING] Не удалось изменить режим панели задач: {exc}")
 
@@ -912,6 +946,11 @@ class SetupWindow(BaseWindow):
         self.stacked_widget.setCurrentWidget(self._main_screen)
 
         self._setup_tray()
+        try:
+            if bool(load_settings().hide_from_taskbar):
+                self.apply_taskbar_mode(True)
+        except Exception:
+            pass
         try:
             self._main_screen.setup_initial_display()
             if not self._main_screen.log_monitor.isRunning():
