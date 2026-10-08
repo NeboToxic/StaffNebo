@@ -64,10 +64,9 @@ class SetupWindow(BaseWindow):
         self._load_existing_config()
         self._update_theme_specific_styles()
         self._load_verification_info()
-        # Не меняем стили окна и не скрываем его во время запуска setup-экрана.
-        # Это могло подвешивать Qt/Windows до появления основного окна.
-        # Трей будет создан после открытия MainWindow.
-        QTimer.singleShot(200, lambda: self._on_platform_changed(self.platform_combo.currentText()))
+        # Tray is initialized only after the main window is opened. This avoids
+        # startup failures on systems where the tray service is unavailable.
+        QTimer.singleShot(100, lambda: self._on_platform_changed(self.platform_combo.currentText()))
 
     def _setup_tray(self):
         if self.tray_icon is not None:
@@ -101,14 +100,10 @@ class SetupWindow(BaseWindow):
             self._restore_from_tray()
 
     def _restore_from_tray(self):
-        try:
-            self.showNormal()
-            self.show()
-            self.raise_()
-            self.activateWindow()
-            self.apply_taskbar_mode(bool(load_settings().hide_from_taskbar))
-        except Exception as exc:
-            print(f"[WARNING] Не удалось показать NeboProject из трея: {exc}")
+        self.showNormal()
+        self.show()
+        self.raise_()
+        self.activateWindow()
 
     def minimize_to_tray(self):
         try:
@@ -901,11 +896,6 @@ class SetupWindow(BaseWindow):
 
         self._setup_tray()
         try:
-            # Применяем сохранённый режим только после полной инициализации
-            # главного окна. Так запуск не блокируется операциями WinAPI.
-            if bool(load_settings().hide_from_taskbar):
-                self.apply_taskbar_mode(True)
-                QTimer.singleShot(100, self.hide)
             self._main_screen.setup_initial_display()
             if not self._main_screen.log_monitor.isRunning():
                 self._main_screen.log_monitor.start()

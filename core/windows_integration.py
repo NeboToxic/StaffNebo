@@ -75,14 +75,6 @@ def set_taskbar_hidden(window, hidden: bool) -> bool:
         SWP_NOACTIVATE = 0x0010
         user32.SetWindowPos(hwnd, 0, 0, 0, 0, 0,
                             SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED | SWP_NOACTIVATE)
-        # Windows can keep the old taskbar entry until the top-level window is
-        # briefly hidden and shown after changing WS_EX_APPWINDOW/TOOLWINDOW.
-        SW_HIDE = 0
-        SW_SHOW = 5
-        user32.ShowWindow(hwnd, SW_HIDE)
-        user32.ShowWindow(hwnd, SW_SHOW)
-        user32.SetWindowPos(hwnd, 0, 0, 0, 0, 0,
-                            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED | SWP_NOACTIVATE)
         return True
     except Exception as exc:
         print(f"[ERROR] Не удалось изменить режим панели задач: {exc}")
