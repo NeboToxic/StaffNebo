@@ -18,11 +18,11 @@ from core.helpers import gui_print, make_sound
 from core.settings import load_settings, update_settings
 from core.windows_integration import set_taskbar_hidden
 from core.paths import resource_path
+import core.globals as g
 from core.globals import (
     gui_messages_buffer, platform, vk_user_id,
     my_nickname, using_sounds_in_program,
-    log_display_mode, put_do_logov,
-    all_mutes, all_warns, all_kicks, previous_sender
+    log_display_mode, put_do_logov, previous_sender
 )
 from config import APP_NAME, VERSION
 from domain.parser import parse_moderation_line
@@ -178,9 +178,10 @@ class MainWindow(QWidget):
         try:
             self.hide_from_taskbar = bool(state)
             update_settings(hide_from_taskbar=self.hide_from_taskbar)
+            top = self.window()
+            if hasattr(top, "_setup_tray"):
+                top._setup_tray()
             self._apply_taskbar_mode()
-            if self.hide_from_taskbar:
-                self._setup_tray()
         except Exception as e:
             gui_print(f"[ERROR] Ошибка режима панели задач: {e}")
 
@@ -217,7 +218,12 @@ class MainWindow(QWidget):
             self._restore_from_tray()
 
     def _restore_from_tray(self):
+        top = self.window()
+        if top is not self and hasattr(top, "_restore_from_tray"):
+            top._restore_from_tray()
+            return
         self.showNormal()
+        self.setWindowState(self.windowState() & ~Qt.WindowMinimized)
         self.show()
         self.raise_()
         self.activateWindow()
@@ -445,13 +451,13 @@ class MainWindow(QWidget):
         gui_messages_buffer.clear()
 
     def update_stats(self):
-        self.mutes_label.setText(f"◉  МУТЫ\n{all_mutes}")
-        self.warns_label.setText(f"⚠  ВАРНЫ\n{all_warns}")
-        self.kicks_label.setText(f"➜  КИКИ\n{all_kicks}")
+        self.mutes_label.setText(f"◉  МУТЫ\n{g.all_mutes}")
+        self.warns_label.setText(f"⚠  ВАРНЫ\n{g.all_warns}")
+        self.kicks_label.setText(f"➜  КИКИ\n{g.all_kicks}")
         if hasattr(self, 'day_mutes'):
-            self.day_mutes.setText(f"◉   Муты                                      {all_mutes}")
-            self.day_warns.setText(f"⚠   Варны                                     {all_warns}")
-            self.day_kicks.setText(f"➜   Кики                                      {all_kicks}")
+            self.day_mutes.setText(f"◉   Муты                                      {g.all_mutes}")
+            self.day_warns.setText(f"⚠   Варны                                     {g.all_warns}")
+            self.day_kicks.setText(f"➜   Кики                                      {g.all_kicks}")
 
     def _update_session_timer(self):
         elapsed = datetime.datetime.now() - self.session_start_time

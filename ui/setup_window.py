@@ -5,7 +5,7 @@ import traceback
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QLineEdit, QComboBox, QCheckBox, QStackedWidget,
-    QProgressBar, QSlider, QFileDialog, QSizePolicy
+    QProgressBar, QSlider, QFileDialog, QSizePolicy, QSystemTrayIcon
 )
 from PyQt5.QtCore import Qt, QRectF, QTimer, QPointF
 from PyQt5.QtGui import QPainter, QColor, QPen, QIcon, QImage, QPainterPath
@@ -67,12 +67,20 @@ class SetupWindow(BaseWindow):
         # Tray is initialized only after the main window is opened. This avoids
         # startup failures on systems where the tray service is unavailable.
         QTimer.singleShot(100, lambda: self._on_platform_changed(self.platform_combo.currentText()))
+        QTimer.singleShot(500, self._ensure_tray_if_needed)
+
+    def _ensure_tray_if_needed(self):
+        try:
+            if bool(load_settings().hide_from_taskbar):
+                self._setup_tray()
+        except Exception as exc:
+            print(f"[WARNING] Не удалось восстановить системный трей: {exc}")
 
     def _setup_tray(self):
         if self.tray_icon is not None:
             return
         try:
-            from PyQt5.QtWidgets import QSystemTrayIcon, QMenu, QAction
+            from PyQt5.QtWidgets import QMenu, QAction
             if not QSystemTrayIcon.isSystemTrayAvailable():
                 return
             icon_path = resource_path(os.path.join('path', 'icon.ico'))
@@ -100,10 +108,19 @@ class SetupWindow(BaseWindow):
             self._restore_from_tray()
 
     def _restore_from_tray(self):
-        self.showNormal()
-        self.show()
-        self.raise_()
-        self.activateWindow()
+        try:
+            self.setWindowState(self.windowState() & ~Qt.WindowMinimized)
+            self.showNormal()
+            self.show()
+            self.raise_()
+            self.activateWindow()
+            # Keep the user's taskbar preference; the window itself is still restored.
+            try:
+                self.apply_taskbar_mode(bool(load_settings().hide_from_taskbar))
+            except Exception:
+                pass
+        except Exception as exc:
+            print(f"[WARNING] Не удалось показать NeboProject из трея: {exc}")
 
     def minimize_to_tray(self):
         try:
