@@ -20,7 +20,7 @@ def set_startup_enabled(enabled: bool) -> bool:
         return False
     try:
         import winreg
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, APP_RUN_KEY, 0, winreg.KEY_SET_VALUE | winreg.KEY_QUERY_VALUE) as key:
+        with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, APP_RUN_KEY, 0, winreg.KEY_SET_VALUE | winreg.KEY_QUERY_VALUE) as key:
             if enabled:
                 winreg.SetValueEx(key, APP_RUN_NAME, 0, winreg.REG_SZ, _startup_command())
             else:

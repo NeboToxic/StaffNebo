@@ -1,17 +1,18 @@
 import os
 import re
 import time as tm
+import secrets
+from html import escape, unescape
 
 import requests
 from dataclasses import dataclass
 from typing import Optional
 
-import telebot
 
 import core.globals as g
 from core.paths import screenshot_path
 from core.settings import load_settings
-from core.telegram_proxy import build_proxy_url, requests_proxies, telebot_proxy
+from core.telegram_proxy import build_proxy_url, requests_proxies
 from domain.events import LABELS, PunishmentType
 from domain.worker_client import send_vk_message
 
@@ -22,6 +23,7 @@ def _telegram_error(exc: Exception, bot_token: str = '') -> str:
     if bot_token:
         text = text.replace(bot_token, '<TOKEN>')
     text = re.sub(r'(bot)\d{6,}:[A-Za-z0-9_-]+', r'\1<TOKEN>', text)
+    text = re.sub(r'(https?://|socks5h?://)[^/@\s]+:[^/@\s]*@', r'\1<AUTH>@', text)
     if isinstance(exc, requests.exceptions.ConnectTimeout):
         return 'Не удалось подключиться к api.telegram.org: превышено время ожидания. Проверьте интернет, VPN/прокси или firewall.'
     if isinstance(exc, requests.exceptions.ConnectionError):
@@ -64,10 +66,18 @@ class SendPayload:
     dating: str
     timing: str
     photoid: Optional[str] = None
+    needs_photo: Optional[bool] = None
+    settings_override: object = None
+    record_id: int = 0
+    delivery_id: int = 0
+
+    def __post_init__(self):
+        if self.needs_photo is None:
+            self.needs_photo = self.event_type != PunishmentType.KICK
 
 
 def clean_html(text: str) -> str:
-    return re.sub(r'<.*?>', '', text or '')
+    return unescape(re.sub(r'<.*?>', '', text or ''))
 
 
 def build_telegram_user_text(payload: SendPayload) -> str:
@@ -75,9 +85,9 @@ def build_telegram_user_text(payload: SendPayload) -> str:
     return (
         f'Ник: {payload.target_html}\n'
         f'Тип наказания: {label}\n'
-        f'Причина: {payload.reason}\n'
-        f'Дата: {payload.dating}\n'
-        f'Время: {payload.timing}\n\n'
+        f'Причина: {escape(payload.reason)}\n'
+        f'Дата: {escape(payload.dating)}\n'
+        f'Время: {escape(payload.timing)}\n\n'
         f'<em>Любишь небо?</em>'
     )
 
@@ -88,9 +98,9 @@ def build_telegram_log_text(payload: SendPayload) -> str:
         f'Блюститель: {payload.moderator_html}\n\n'
         f'Ник: {payload.target_html}\n'
         f'Тип наказания: {label}\n'
-        f'Причина: {payload.reason}\n'
-        f'Дата: {payload.dating}\n'
-        f'Время: {payload.timing}\n\n'
+        f'Причина: {escape(payload.reason)}\n'
+        f'Дата: {escape(payload.dating)}\n'
+        f'Время: {escape(payload.timing)}\n\n'
         f'<em>Любишь небо?</em>'
     )
 
@@ -108,64 +118,101 @@ def build_vk_text(payload: SendPayload) -> str:
     )
 
 
-class TelegramNotifier:
-    def send_punishment(self, payload: SendPayload, should_stop=None) -> tuple:
-        meta = LABELS[payload.event_type]
-        photo_path = screenshot_path(payload.photoid) if payload.photoid else None
+def _pause(seconds, should_stop=None):
+    deadline = tm.monotonic() + seconds
+    while tm.monotonic() < deadline:
+        if should_stop and should_stop():
+            return True
+        tm.sleep(min(0.1, max(0, deadline - tm.monotonic())))
+    return bool(should_stop and should_stop())
 
+
+def _delete_sent_file(filename, settings=None):
+    if (settings or load_settings()).retain_screenshots:
+        return
+    if filename:
+        try:
+            os.remove(filename)
+        except OSError:
+            pass  # A successful delivery must not be retried because deletion failed.
+
+
+def _proxy(settings):
+    return build_proxy_url(settings.tg_proxy_type, settings.tg_proxy_host,
+                           settings.tg_proxy_port, settings.tg_proxy_username,
+                           settings.tg_proxy_password)
+
+
+def _send_telegram_text(token, chat, text, proxy_url=None, parse_mode='html'):
+    data = {'chat_id': int(chat), 'text': text}
+    if parse_mode:
+        data['parse_mode'] = parse_mode
+    response = requests.post(_telegram_api_url(token, 'sendMessage'), data=data,
+                             proxies=requests_proxies(proxy_url), timeout=(10, 30))
+    response.raise_for_status()
+    payload = response.json()
+    if not payload.get('ok'):
+        raise RuntimeError(payload.get('description') or 'Telegram API вернул ошибку')
+
+
+class TelegramNotifier:
+    def send_punishment(self, payload, should_stop=None):
+        meta = LABELS[payload.event_type]
+        photo = screenshot_path(payload.photoid) if payload.photoid else None
+        settings = payload.settings_override or load_settings()
+        from domain.templates import render_template
+        text = render_template(payload, settings, html=True) if settings.notification_template else build_telegram_user_text(payload)
+        # Long reasons cannot fit Telegram's photo caption; send plain text chunks.
+        long_text = len(text) > (4096 if not payload.needs_photo or not photo else 1024)
+        plain = clean_html(payload.target_html)
+        plain = (f'Ник: {plain}\nТип наказания: {meta["ru"]}\n'
+                 f'Причина: {payload.reason}\nДата: {payload.dating}\nВремя: {payload.timing}')
+        if settings.notification_template:
+            plain = render_template(payload, settings)
+        chunks = [plain[i:i+4000] for i in range(0, len(plain), 4000)] if long_text else [text]
+        photo_sent = False
+        next_chunk = 0
+        token = str(settings.bot_id or '')
         for attempt in range(1, meta['tg_attempts'] + 1):
             if should_stop and should_stop():
                 return False, ''
             try:
-                settings = load_settings()
-                proxy_url = build_proxy_url(
-                    settings.tg_proxy_type, settings.tg_proxy_host, settings.tg_proxy_port,
-                    settings.tg_proxy_username, settings.tg_proxy_password
-                )
-                telebot.apihelper.proxy = telebot_proxy(proxy_url)
-                bot = telebot.TeleBot(str(g.bot_id))
-                chat_id = int(payload.user_id)
-                text_main = build_telegram_user_text(payload)
-                text_log = build_telegram_log_text(payload)
-
-                if payload.event_type == PunishmentType.KICK:
-                    bot.send_message(chat_id, text_main, parse_mode='html')
-                else:
-                    with open(photo_path, 'rb') as photo_file:
-                        bot.send_photo(chat_id, photo_file, text_main, parse_mode='html')
-                    os.remove(photo_path)
-
+                proxy_url = _proxy(settings)
+                if payload.needs_photo and photo and not photo_sent:
+                    _send_telegram_photo(photo, token, payload.user_id,
+                                         '<em>Любишь небо?</em>' if long_text else text, proxy_url)
+                    photo_sent = True
+                if not payload.needs_photo or not photo or long_text:
+                    while next_chunk < len(chunks):
+                        if should_stop and should_stop():
+                            return False, ''
+                        _send_telegram_text(token, payload.user_id, chunks[next_chunk], proxy_url,
+                                            parse_mode=None if long_text else 'html')
+                        next_chunk += 1
+                _delete_sent_file(photo if payload.needs_photo else None, settings)
                 return True, meta['sent_tg']
-            except Exception as e:
+            except Exception as exc:
                 if attempt == meta['tg_attempts']:
-                    return False, f"[ERROR] Не удалось отправить {meta['fail_tg']}: {e}"
-                tm.sleep(meta['tg_sleep'])
-        return False, f"[ERROR] Не удалось отправить {meta['fail_tg']}"
+                    return False, f"[ERROR] Не удалось отправить {meta['fail_tg']}: {_telegram_error(exc, token)}"
+                if _pause(meta['tg_sleep'], should_stop):
+                    return False, ''
+        return False, meta['fail_tg']
 
-    def send_screenshot(self, filename: str, bot_token: str, chat: str, should_stop=None) -> tuple:
+    def send_screenshot(self, filename, bot_token, chat, should_stop=None, settings=None):
+        settings = settings or load_settings()
         for attempt in range(1, 4):
             if should_stop and should_stop():
                 return False, ''
             try:
-                _send_telegram_photo(
-                    filename, str(bot_token), str(chat),
-                    '<em>Любишь небо?</em>',
-                    proxy_url=build_proxy_url(
-                        load_settings().tg_proxy_type, load_settings().tg_proxy_host, load_settings().tg_proxy_port,
-                        load_settings().tg_proxy_username, load_settings().tg_proxy_password
-                    ),
-                )
-                try:
-                    os.remove(filename)
-                except Exception:
-                    pass
+                _send_telegram_photo(filename, str(bot_token), str(chat),
+                                     '<em>Любишь небо?</em>', _proxy(settings))
+                _delete_sent_file(filename, settings)
                 return True, '[SYSTEM] Скриншот отправлен в Telegram'
-            except Exception as e:
+            except Exception as exc:
                 if attempt == 3:
-                    # Do NOT delete the screenshot when Telegram is unreachable.
-                    # It can be sent again after the network is restored.
-                    return False, f'[ERROR] Не удалось отправить скриншот в Telegram: {_telegram_error(e, str(bot_token))}'
-                tm.sleep(3)
+                    return False, f'[ERROR] Не удалось отправить скриншот в Telegram: {_telegram_error(exc, str(bot_token))}'
+                if _pause(3, should_stop):
+                    return False, ''
         return False, '[ERROR] Не удалось отправить скриншот в Telegram'
 
 
@@ -183,43 +230,47 @@ class VkNotifier:
         meta = LABELS[payload.event_type]
         photo_path = screenshot_path(payload.photoid) if payload.photoid else None
 
+        settings = payload.settings_override or load_settings()
+        random_id = payload.delivery_id or secrets.randbelow(2**31 - 1) + 1
         for attempt in range(1, meta['vk_attempts'] + 1):
             if should_stop and should_stop():
                 return False, ''
             try:
-                peer_id = self._peer_id(vk_user_id)
-                photo = None if payload.event_type == PunishmentType.KICK else photo_path
-                send_vk_message(load_settings().vk_token, peer_id, build_vk_text(payload), photo)
+                peer_id = vk_user_id or settings.vk_user_id
+                photo = photo_path if payload.needs_photo else None
+                from domain.templates import render_template
+                text = render_template(payload, settings) if settings.notification_template else build_vk_text(payload)
+                send_vk_message(settings.vk_token, peer_id, text, photo, random_id=random_id, should_stop=should_stop)
 
                 if photo_path and os.path.exists(photo_path):
-                    os.remove(photo_path)
+                    _delete_sent_file(photo_path, settings)
                 return True, meta['sent_vk']
             except Exception as e:
                 if attempt == meta['vk_attempts']:
-                    return False, f"[ERROR] Не удалось отправить {meta['fail_vk']}: {e}"
-                tm.sleep(meta['vk_sleep'])
+                    return False, f"[ERROR] Не удалось отправить {meta['fail_vk']}: {_telegram_error(RuntimeError(str(e)), str(settings.vk_token or ''))}"
+                if _pause(meta['vk_sleep'], should_stop):
+                    return False, ''
         return False, f"[ERROR] Не удалось отправить {meta['fail_vk']}"
 
-    def send_screenshot(self, filename: str, vk_user_id: str = '', should_stop=None) -> tuple:
-        random_id = int(tm.time() * 1000)
+    def send_screenshot(self, filename: str, vk_user_id: str = '', should_stop=None, settings=None, delivery_id=0) -> tuple:
+        settings = settings or load_settings()
+        random_id = delivery_id or secrets.randbelow(2**31 - 1) + 1
         for attempt in range(1, 4):
             if should_stop and should_stop():
                 return False, ''
             try:
                 send_vk_message(
-                    load_settings().vk_token, self._peer_id(vk_user_id),
+                    settings.vk_token, vk_user_id or settings.vk_user_id,
                     '📸 Скриншот по запросу\nЛюбишь небо?',
                     filename,
-                    random_id=random_id,
+                    random_id=random_id, should_stop=should_stop,
                 )
-                try:
-                    os.remove(filename)
-                except Exception:
-                    pass
+                _delete_sent_file(filename, settings)
                 return True, '[SYSTEM] Скриншот отправлен во ВКонтакте'
             except Exception as e:
-                if attempt == 2:
+                if attempt == 3:
                     # Keep the screenshot on disk if VK is unavailable.
-                    return False, f'[ERROR] Не удалось отправить скриншот во ВКонтакте: {e}'
-                tm.sleep(1)
+                    return False, f'[ERROR] Не удалось отправить скриншот во ВКонтакте: {_telegram_error(RuntimeError(str(e)), str(settings.vk_token or ''))}'
+                if _pause(1, should_stop):
+                    return False, ''
         return False, '[ERROR] Не удалось отправить скриншот во ВКонтакте'

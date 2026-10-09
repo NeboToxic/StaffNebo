@@ -1,11 +1,12 @@
-from PyQt5.QtCore import QThread, pyqtSignal
+from PyQt5.QtCore import pyqtSignal
+from threads.base import StoppableThread
 
 import core.globals as g
 from domain.events import PunishmentType
 from domain.notifier import SendPayload, TelegramNotifier, VkNotifier
 
 
-class MessageSenderThread(QThread):
+class MessageSenderThread(StoppableThread):
     finished_signal = pyqtSignal(bool, str)
 
     def __init__(self, send_type, platform_name, *args, payload: SendPayload = None, vk_user_id: str = ''):
@@ -15,14 +16,8 @@ class MessageSenderThread(QThread):
         self.args = args
         self.payload = payload
         self.vk_user_id = vk_user_id or ''
-        self.should_stop = False
         self._tg = TelegramNotifier()
         self._vk = VkNotifier()
-
-    def stop(self):
-        self.should_stop = True
-        if self.isRunning():
-            self.wait(2000)
 
     def _stopped(self):
         return self.should_stop
@@ -42,8 +37,7 @@ class MessageSenderThread(QThread):
                     ok, msg = self._vk.send_screenshot(
                         filename, self.vk_user_id or g.vk_user_id, should_stop=self._stopped
                     )
-                if msg:
-                    self.finished_signal.emit(ok, msg)
+                self.finished_signal.emit(ok, msg)
                 return
 
             payload = self.payload
@@ -58,8 +52,7 @@ class MessageSenderThread(QThread):
                     vk_user_id=self.vk_user_id or g.vk_user_id,
                     should_stop=self._stopped,
                 )
-            if msg:
-                self.finished_signal.emit(ok, msg)
+            self.finished_signal.emit(ok, msg)
         except Exception as e:
             self.finished_signal.emit(False, f'[ERROR] Ошибка отправки: {e}')
 

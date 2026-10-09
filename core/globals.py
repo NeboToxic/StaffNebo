@@ -1,3 +1,4 @@
+import os
 from core.settings import load_settings
 
 
@@ -50,12 +51,12 @@ def apply_settings(settings=None):
     put_do_logov = logs
 
     try:
-        my_id = int(chat_id) if chat_id and str(chat_id).isdigit() else 0
+        my_id = int(chat_id) if chat_id else 0
     except (ValueError, TypeError):
         my_id = 0
 
-    print("[SYSTEM] Глобальные переменные загружены из SQLite")
-    print(f"[SYSTEM] platform={platform}, vk_user_id={vk_user_id}, chat_id={chat_id}")
+    if os.getenv("NEBO_DEBUG") == "1":
+        print("[SYSTEM] Настройки загружены из SQLite")
     return settings
 
 

@@ -2,6 +2,8 @@ import os
 import sys
 import getpass
 import traceback
+import re
+from domain.notifier import _telegram_error
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QLineEdit, QComboBox, QCheckBox, QStackedWidget,
@@ -48,6 +50,11 @@ class SetupWindow(BaseWindow):
         self.old_chat_id = ''
         self.tray_icon = None
         self.tray_menu = None
+        self._tray_retry_count = 0
+        self._closing = False
+        self._close_timer = QTimer(self)
+        self._close_timer.setInterval(100)
+        self._close_timer.timeout.connect(self._finish_close)
 
         self.stacked_widget = QStackedWidget()
         main_layout = QVBoxLayout(self)
@@ -70,19 +77,19 @@ class SetupWindow(BaseWindow):
         QTimer.singleShot(500, self._ensure_tray_if_needed)
 
     def _ensure_tray_if_needed(self):
-        """Keep the tray icon alive after startup/taskbar style changes.
-
-        Windows can initialize the notification area a little later than Qt.
-        Retry a few times instead of silently losing the icon.
-        """
+        if self._closing:
+            return
         try:
-            if bool(load_settings().hide_from_taskbar):
-                self._setup_tray()
-                if self.tray_icon is None:
-                    for delay in (800, 1600, 3000):
-                        QTimer.singleShot(delay, self._ensure_tray_if_needed)
+            if load_settings().hide_from_taskbar:
+                self.apply_taskbar_mode(True)
+                if self.tray_icon is None and self._tray_retry_count < 5:
+                    self._tray_retry_count += 1
+                    QTimer.singleShot(1000, self._ensure_tray_if_needed)
         except Exception as exc:
-            print(f"[WARNING] Не удалось восстановить системный трей: {exc}")
+            print(f'[WARNING] Не удалось восстановить трей: {exc}')
+
+    def _exit_from_tray(self):
+        self.close()
 
     def _setup_tray(self):
         """Create/show the single tray icon owned by the real top-level window."""
@@ -159,32 +166,43 @@ class SetupWindow(BaseWindow):
         else:
             self.showMinimized()
 
-    def apply_taskbar_mode(self, hidden: bool):
-        try:
-            if hidden:
-                self._setup_tray()
-            set_taskbar_hidden(self, hidden)
-            if hidden:
-                # Re-show the notification icon after Windows refreshes the
-                # window styles; this is important when WS_EX_TOOLWINDOW is set.
-                QTimer.singleShot(100, self._ensure_tray_if_needed)
-                QTimer.singleShot(500, self._ensure_tray_if_needed)
-        except Exception as exc:
-            print(f"[WARNING] Не удалось изменить режим панели задач: {exc}")
+    def apply_taskbar_mode(self, hidden):
+        if self._closing:
+            return False
+        if hidden and not self._setup_tray():
+            set_taskbar_hidden(self, False)
+            return False
+        return set_taskbar_hidden(self, hidden)
+
+    def _has_running_threads(self):
+        validation = getattr(self, 'validation_thread', None)
+        main = getattr(self, '_main_screen', None)
+        center=getattr(self,'_control_center',None)
+        return bool((center is not None and center.has_running_threads()) or (validation is not None and validation.isRunning()) or
+                    (main is not None and main.has_running_threads()))
+
+    def _finish_close(self):
+        if not self._has_running_threads():
+            self._close_timer.stop()
+            self.close()
 
     def closeEvent(self, event):
+        self._closing = True
+        center=getattr(self,'_control_center',None)
+        if center is not None:center.stop_jobs();center.hide()
+        main = getattr(self, '_main_screen', None)
+        if main is not None:
+            main.shutdown()
+        validation = getattr(self, 'validation_thread', None)
+        if validation is not None:
+            validation.stop()
+        if self._has_running_threads():
+            self.setEnabled(False)
+            self._close_timer.start()
+            event.ignore()
+            return
         if self.tray_icon is not None:
             self.tray_icon.hide()
-        if getattr(self, '_main_screen', None) is not None:
-            try:
-                self._main_screen.shutdown()
-            except Exception:
-                pass
-        if hasattr(self, 'validation_thread') and self.validation_thread is not None:
-            try:
-                self.validation_thread.stop()
-            except Exception:
-                pass
         super().closeEvent(event)
 
     def _load_theme(self):
@@ -398,12 +416,13 @@ class SetupWindow(BaseWindow):
             print(f"Ошибка загрузки verified_settings: {e}")
 
     def save_verification_info(self, bot_id_val, chat_id_val):
-        try:
+        # Called by the validation worker; commit the candidate on the GUI thread.
+        candidate = getattr(self, '_pending_settings', None)
+        if candidate is not None:
+            candidate.verified_bot_id = bot_id_val
+            candidate.verified_chat_id = chat_id_val
+        else:
             update_settings(verified_bot_id=bot_id_val, verified_chat_id=chat_id_val)
-            self.verified_bot_id = bot_id_val
-            self.verified_chat_id = chat_id_val
-        except Exception as e:
-            print(f"Ошибка сохранения verified_settings: {e}")
 
     def _load_existing_config(self):
         try:
@@ -413,8 +432,8 @@ class SetupWindow(BaseWindow):
             if settings.logs:
                 logs_path = settings.logs
                 username = getpass.getuser()
-                minigames_path = f"C:\\Users\\{username}\\.cristalix\\updates\\Minigames\\logs\\latest.log"
-                staff_path = f"C:\\Users\\{username}\\.cristalix\\updates\\Minigames-staging-java21\\logs\\latest.log"
+                minigames_path = os.path.join(os.path.expanduser('~'), '.cristalix', 'updates', 'Minigames', 'logs', 'latest.log')
+                staff_path = os.path.join(os.path.expanduser('~'), '.cristalix', 'updates', 'Minigames-staging-java21', 'logs', 'latest.log')
                 if logs_path == minigames_path:
                     self.logs_combo.setCurrentText("Minigames")
                 elif logs_path == staff_path:
@@ -477,6 +496,9 @@ class SetupWindow(BaseWindow):
         self.minimize_btn = self.title_bar.minimize_btn
         self.maximize_btn = self.title_bar.maximize_btn
         self.close_btn = self.title_bar.close_btn
+        center_button=QPushButton('Центр управления')
+        center_button.clicked.connect(self.open_control_center)
+        self.title_bar.add_widget(center_button)
         main_layout.addWidget(self.title_bar)
         center_widget = QWidget()
         center_layout = QHBoxLayout(center_widget)
@@ -536,6 +558,7 @@ class SetupWindow(BaseWindow):
         telegram_layout.setContentsMargins(0, 0, 0, 0)
         telegram_layout.setSpacing(14)
         self.bot_id_input = QLineEdit()
+        self.bot_id_input.setEchoMode(QLineEdit.Password)
         self.bot_id_input.setPlaceholderText("ID бота в формате число:строка")
         telegram_layout.addLayout(self._field_row("Token Bot:", self.bot_id_input))
         self.tg_id_input = QLineEdit()
@@ -584,6 +607,7 @@ class SetupWindow(BaseWindow):
         self.vk_id_input.setPlaceholderText("ID пользователя / беседы")
         vk_layout.addLayout(self._field_row("VK ID:", self.vk_id_input))
         self.vk_token_input = QLineEdit()
+        self.vk_token_input.setEchoMode(QLineEdit.Password)
         self.vk_token_input.setPlaceholderText("Токен VK API")
         self.vk_token_input.setEchoMode(QLineEdit.Password)
         vk_layout.addLayout(self._field_row("VK Token:", self.vk_token_input))
@@ -756,23 +780,23 @@ class SetupWindow(BaseWindow):
             logs_path = self.custom_logs_input.text().strip()
             if not logs_path:
                 errors.append("Не указан путь к файлу логов")
-            elif not os.path.exists(logs_path):
+            elif not os.path.isfile(logs_path):
                 errors.append(f"Указанный путь не существует:\n{logs_path}")
         else:
             username = getpass.getuser()
             if logs_type == "Minigames":
-                logs_path = f"C:\\Users\\{username}\\.cristalix\\updates\\Minigames\\logs\\latest.log"
+                logs_path = os.path.join(os.path.expanduser('~'), '.cristalix', 'updates', 'Minigames', 'logs', 'latest.log')
             else:
-                logs_path = f"C:\\Users\\{username}\\.cristalix\\updates\\Minigames-staging-java21\\logs\\latest.log"
-            if not os.path.exists(logs_path):
+                logs_path = os.path.join(os.path.expanduser('~'), '.cristalix', 'updates', 'Minigames-staging-java21', 'logs', 'latest.log')
+            if not os.path.isfile(logs_path):
                 errors.append(f"Путь к логам не существует:\n{logs_path}")
         if platform_choice == "Telegram":
             bot_id_val = self.bot_id_input.text().strip()
             tg_id_val = self.tg_id_input.text().strip()
             if not bot_id_val or ':' not in bot_id_val:
                 errors.append("Token Bot должен быть в формате 'число:строка'")
-            if not tg_id_val or not tg_id_val.isdigit():
-                errors.append("TG ID должен быть числом")
+            if not tg_id_val or not re.fullmatch(r'-?[1-9]\d*', tg_id_val):
+                errors.append("TG ID должен быть ненулевым целым числом")
             if proxy_type_val != 'none':
                 if not proxy_host_val:
                     errors.append("Для прокси укажите адрес")
@@ -823,15 +847,12 @@ class SetupWindow(BaseWindow):
             existing.vk_user_id = vk_saved
             existing.vk_token = vk_token_saved
             existing.startup_windows = self.startup_checkbox.isChecked()
-            if not set_startup_enabled(existing.startup_windows):
-                if existing.startup_windows:
-                    raise RuntimeError("Не удалось включить автозапуск Windows")
             existing.tg_proxy_type = proxy_type_val if platform_choice == 'Telegram' else existing.tg_proxy_type
             existing.tg_proxy_host = proxy_host_val if platform_choice == 'Telegram' else existing.tg_proxy_host
             existing.tg_proxy_port = proxy_port_val if platform_choice == 'Telegram' else existing.tg_proxy_port
             existing.tg_proxy_username = proxy_username_val if platform_choice == 'Telegram' else existing.tg_proxy_username
             existing.tg_proxy_password = proxy_password_val if platform_choice == 'Telegram' else existing.tg_proxy_password
-            save_settings(existing)
+            self._pending_settings = existing
 
             self.validation_data = {
                 'nick': nick,
@@ -845,8 +866,7 @@ class SetupWindow(BaseWindow):
             self._start_validation()
         except Exception as e:
             self.confirm_btn.setEnabled(True)
-            traceback.print_exc()
-            self.show_error(f"Ошибка сохранения: {type(e).__name__}: {e}")
+            self.show_error(f"Ошибка сохранения: {type(e).__name__}: {_telegram_error(e, bot_saved)}")
 
     def _start_validation(self):
         self.validation_thread = ValidationThread(
@@ -859,16 +879,34 @@ class SetupWindow(BaseWindow):
     def _on_validation_finished(self, success, message):
         # Важно: исключение из Qt-slot может завершить приложение без нормального
         # сообщения пользователю. Поэтому переход в главное окно всегда защищён.
+        if self._closing:
+            return
         if not success:
             self.stacked_widget.setCurrentWidget(self.setup_screen)
             self.confirm_btn.setEnabled(True)
             self.show_error(message)
             return
 
+        try:
+            candidate = getattr(self, '_pending_settings', None)
+            if candidate is not None:
+                if not set_startup_enabled(candidate.startup_windows) and candidate.startup_windows:
+                    raise RuntimeError('Не удалось включить автозапуск Windows')
+                save_settings(candidate)
+                self.verified_bot_id = candidate.verified_bot_id or None
+                self.verified_chat_id = candidate.verified_chat_id or None
+                self._pending_settings = None
+        except Exception as exc:
+            self.stacked_widget.setCurrentWidget(self.setup_screen)
+            self.confirm_btn.setEnabled(True)
+            self.show_error(f'Ошибка сохранения: {_telegram_error(exc, self.validation_data.get("bot_id", ""))}')
+            return
         self.confirm_btn.setEnabled(True)
         QTimer.singleShot(300, self._safe_open_main_window)
 
     def _safe_open_main_window(self):
+        if self._closing:
+            return
         try:
             self._open_main_window()
         except Exception as e:
@@ -883,10 +921,10 @@ class SetupWindow(BaseWindow):
         try:
             if not bot_id_val or bot_id_val == "0:default" or ':' not in bot_id_val:
                 return {"success": True, "message": "Проверка не требуется (VK режим)"}
-            if not chat_id_val or not chat_id_val.isdigit():
-                return {"success": False, "message": "TG ID должен содержать только цифры"}
+            if not chat_id_val or not re.fullmatch(r'-?[1-9]\d*', chat_id_val):
+                return {"success": False, "message": "TG ID должен быть ненулевым целым числом"}
 
-            settings = load_settings()
+            settings = getattr(self, '_pending_settings', None) or load_settings()
             proxy_url = build_proxy_url(
                 settings.tg_proxy_type, settings.tg_proxy_host, settings.tg_proxy_port,
                 settings.tg_proxy_username, settings.tg_proxy_password
@@ -894,8 +932,8 @@ class SetupWindow(BaseWindow):
             proxies = requests_proxies(proxy_url)
             base = 'https://api.telegram.org'
             get_me = requests.get(f'{base}/bot{bot_id_val}/getMe', timeout=(5, 15), proxies=proxies)
-            get_me.raise_for_status()
             payload = get_me.json()
+            get_me.raise_for_status()
             if not payload.get('ok'):
                 return {"success": False, "message": "Ошибка: Неверный Token Bot"}
 
@@ -905,13 +943,13 @@ class SetupWindow(BaseWindow):
                     data={'chat_id': int(chat_id_val), 'text': '✅ NeboProject успешно подключен! Настройки корректны.', 'parse_mode': 'html'},
                     timeout=(5, 15), proxies=proxies
                 )
-                send.raise_for_status()
                 send_payload = send.json()
                 if not send_payload.get('ok'):
                     description = str(send_payload.get('description') or '').lower()
                     if 'chat not found' in description or 'bad request' in description and 'chat' in description:
                         return {"success": False, "message": "Ошибка: TG ID не найден или неверный"}
                     return {"success": False, "message": send_payload.get('description') or 'Telegram API вернул ошибку'}
+                send.raise_for_status()
             return {"success": True, "message": "Проверка Telegram пройдена успешно"}
         except requests.exceptions.ConnectTimeout:
             return {"success": False, "message": "Не удалось подключиться к Telegram API. Проверьте прокси или VPN."}
@@ -925,7 +963,7 @@ class SetupWindow(BaseWindow):
                 return {"success": False, "message": "Ошибка: TG ID не найден или неверный"}
             if "bot token" in error_msg or "invalid token" in error_msg:
                 return {"success": False, "message": "Ошибка: Неверный Token Bot"}
-            return {"success": False, "message": f"Ошибка Telegram API: {e}"}
+            return {"success": False, "message": f"Ошибка Telegram API: {_telegram_error(e, bot_id_val)}"}
 
     def save_bot_verification(self, bot_id_val, chat_id_val):
         self.save_verification_info(bot_id_val, chat_id_val)
@@ -959,3 +997,16 @@ class SetupWindow(BaseWindow):
         except Exception as e:
             traceback.print_exc()
             raise RuntimeError(f"Ошибка запуска мониторинга логов: {e}") from e
+
+    def open_control_center(self):
+        from ui.control_center import ControlCenter
+        if getattr(self,'_control_center',None) is None:
+            self._control_center=ControlCenter(self)
+            self._control_center.profile_changed.connect(self._profile_changed)
+        self._control_center.show();self._control_center.raise_()
+
+    def _profile_changed(self):
+        self._pending_settings=None
+        self._load_existing_config();self._load_verification_info()
+        main=getattr(self,'_main_screen',None)
+        if main is not None:main.refresh_settings()

@@ -3,6 +3,8 @@ import os
 
 
 def _get_data_dir():
+    if os.environ.get('NEBO_DATA_DIR'):
+        return os.path.abspath(os.environ['NEBO_DATA_DIR'])
     if sys.platform == 'win32':
         # Windows: C:\Users\<User>\AppData\Roaming\HelperTool
         base = os.environ.get('APPDATA', os.path.expanduser('~'))

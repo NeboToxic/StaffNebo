@@ -1,7 +1,8 @@
-from PyQt5.QtCore import QThread, pyqtSignal
+from PyQt5.QtCore import pyqtSignal
+from threads.base import StoppableThread
 
 
-class ValidationThread(QThread):
+class ValidationThread(StoppableThread):
 
     finished = pyqtSignal(bool, str)
 
@@ -13,13 +14,7 @@ class ValidationThread(QThread):
         self.old_chat_id = old_chat_id
         self.verified_bot_id = verified_bot_id
         self.verified_chat_id = verified_chat_id
-        self.parent = parent
-        self.should_stop = False
-
-    def stop(self):
-        self.should_stop = True
-        if self.isRunning():
-            self.wait(1000)
+        self.owner = parent
 
     def run(self):
         if self.should_stop:
@@ -41,16 +36,17 @@ class ValidationThread(QThread):
             if self.should_stop:
                 return
 
-            if self._need_bot_check(bot_id, chat_id) and not self.should_stop:
-                need_message = (bot_id != self.old_bot_id or chat_id != self.old_chat_id)
-                result = self.parent.check_bot_and_chat(bot_id, chat_id, need_message)
+            is_telegram = self.validation_data.get('platform', 'Telegram') in ('Telegram', 'telegram')
+            if is_telegram and self._need_bot_check(bot_id, chat_id) and not self.should_stop:
+                need_message = True
+                result = self.owner.check_bot_and_chat(bot_id, chat_id, need_message)
 
                 if not result["success"]:
                     if not self.should_stop:
                         self.finished.emit(False, result["message"])
                     return
 
-                self.parent.save_verification_info(bot_id, chat_id)
+                self.owner.save_verification_info(bot_id, chat_id)
             elif not self.should_stop:
                 print("Bot ID и Chat ID не изменились, повторная проверка не требуется")
 

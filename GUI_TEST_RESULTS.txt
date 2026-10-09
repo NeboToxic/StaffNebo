@@ -1,0 +1,1 @@
+PASS: setup, main window, tray, restoration, log monitor, HTML, validation, queue recovery, cross-thread signal, 9 control-center pages, profile switching, connection/update jobs, CSV, diagnostics, graceful shutdown

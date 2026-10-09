@@ -3,7 +3,6 @@ import threading
 import sys
 import os
 import atexit
-import signal
 import datetime
 import tzlocal
 from tzlocal import get_localzone
@@ -14,7 +13,7 @@ warnings.filterwarnings("ignore", message="pkg_resources is deprecated")
 
 def gui_print(message: str):
     if g.gui_ready and g.main_window and hasattr(g.main_window, 'log_message'):
-        g.main_window.log_message(message)
+        g.main_window.log_requested.emit(message)
     else:
         g.gui_messages_buffer.append(message)
         print(message)
@@ -22,84 +21,19 @@ def gui_print(message: str):
 
 
 def cleanup():
-    gui_print("[SYSTEM] Выключение NeboProject...")
-
-    try:
-        if g.main_window:
-            if hasattr(g.main_window, 'log_monitor'):
-                g.main_window.log_monitor.stop()
-            if hasattr(g.main_window, 'message_sender'):
-                g.main_window.message_sender.stop()
-    except Exception as e:
-        print(f"Cleanup QThreads error: {e}")
-
-    try:
-        if g.main_window and hasattr(g.main_window, 'keyboard_listener'):
-            g.main_window.keyboard_listener.stop()
-    except Exception as e:
-        print(f"Cleanup hotkeys error: {e}")
-
-    try:
-        tm.sleep(0.1)
-        for thread in threading.enumerate():
-            if (thread != threading.current_thread()
-                    and thread != threading.main_thread()
-                    and not thread.daemon
-                    and hasattr(thread, 'name')
-                    and thread.name
-                    and any(name in thread.name for name in ['Thread', 'Helper', 'Log', 'Message', 'Monitor'])):
-                if hasattr(thread, 'stop'):
-                    try:
-                        thread.stop()
-                    except Exception:
-                        pass
-                elif hasattr(thread, 'join'):
-                    try:
-                        thread.join(timeout=0.1)
-                    except Exception:
-                        pass
-    except Exception as e:
-        print(f"Cleanup threads error: {e}")
-
-    try:
-        if os.path.isdir(SCREENSHOTS_DIR):
-            for file in os.listdir(SCREENSHOTS_DIR):
-                if file.startswith('screenshot_') and file.endswith('.png'):
-                    try:
-                        os.remove(os.path.join(SCREENSHOTS_DIR, file))
-                    except Exception:
-                        pass
-    except Exception as e:
-        print(f"Cleanup files error: {e}")
-
-    try:
-        from PyQt5.QtWidgets import QApplication
-        app = QApplication.instance()
-        if app is not None:
-            app.quit()
-    except Exception as e:
-        print(f"Cleanup Qt error: {e}")
-
-    def force_exit():
-        os._exit(0)
-
-    threading.Timer(1.0, force_exit).start()
+    """Release listeners; unsent screenshots remain available on disk."""
+    if g.main_window is not None:
+        g.main_window.shutdown()
 
 
-def safe_cleanup(signum=None, frame=None):
+def safe_cleanup():
     try:
         cleanup()
-    except Exception as e:
-        print(f"Safe cleanup error: {e}")
-    finally:
-        if signum is not None:
-            sys.exit(0)
+    except Exception as exc:
+        print(f"Cleanup error: {exc}")
 
 
 atexit.register(safe_cleanup)
-signal.signal(signal.SIGINT, safe_cleanup)
-signal.signal(signal.SIGTERM, safe_cleanup)
-
 
 
 def make_sound():
@@ -132,23 +66,17 @@ def pressing_key(key):
         keyboard.press(key)
         keyboard.release(key)
     except Exception as e:
-        print(f"Error pressing key: {e}")
+        raise RuntimeError(f"Не удалось нажать клавишу: {e}") from e
 
 
 
 def add_timezone_to_str(time_str: str) -> str:
     local_tz = get_localzone()
     now = datetime.datetime.now(local_tz)
-    total_seconds = local_tz.utcoffset(now).total_seconds()
-    utc_offset_hours = total_seconds / 3600
-
-    hours = int(utc_offset_hours)
-    minutes = int(abs(utc_offset_hours - hours) * 60)
-
-    if minutes == 0:
-        utc_str = f"UTC{hours:+d}"
-    else:
-        utc_str = f"UTC{hours:+d}:{minutes:02d}"
+    total_minutes = int(local_tz.utcoffset(now).total_seconds() / 60)
+    sign = '+' if total_minutes >= 0 else '-'
+    hours, minutes = divmod(abs(total_minutes), 60)
+    utc_str = f'UTC{sign}{hours}' + (f':{minutes:02d}' if minutes else '')
 
     return f"{time_str} ({utc_str})"
 
@@ -158,6 +86,10 @@ def init_local_storage():
     from core.settings import init_settings
     try:
         init_settings()
+        from core.profiles import ensure_default
+        from core.history import recover_interrupted
+        ensure_default()
+        recover_interrupted()
         return True
     except Exception as e:
         gui_print(f"[ERROR] Не удалось инициализировать базу настроек: {e}")

@@ -1,0 +1,64 @@
+test_clearing_secrets_removes_all_snapshots (test_features.FeatureTests.test_clearing_secrets_removes_all_snapshots) ... ok
+test_connection_telegram_proxy_read_only (test_features.FeatureTests.test_connection_telegram_proxy_read_only) ... ok
+test_connection_vk_901_explained_without_token (test_features.FeatureTests.test_connection_vk_901_explained_without_token) ... ok
+test_delete_active_profile_rejected (test_features.FeatureTests.test_delete_active_profile_rejected) ... ok
+test_diagnostics_redacts_tokens_in_errors_and_reasons (test_features.FeatureTests.test_diagnostics_redacts_tokens_in_errors_and_reasons) ... ok
+test_disabled_notification_is_still_recorded (test_features.FeatureTests.test_disabled_notification_is_still_recorded) ... ok
+test_dpapi_roundtrip_ciphertext_and_database (test_features.FeatureTests.test_dpapi_roundtrip_ciphertext_and_database) ... ok
+test_history_search_filters_and_csv_formula_safety (test_features.FeatureTests.test_history_search_filters_and_csv_formula_safety) ... ok
+test_locked_secret_is_preserved_until_explicit_delete (test_features.FeatureTests.test_locked_secret_is_preserved_until_explicit_delete) ... ok
+test_missing_photo_can_be_sent_explicitly_without_image (test_features.FeatureTests.test_missing_photo_can_be_sent_explicitly_without_image) ... ok
+test_outbox_failure_retry_reuses_vk_id (test_features.FeatureTests.test_outbox_failure_retry_reuses_vk_id) ... ok
+test_outbox_success_preserves_recipient_snapshot (test_features.FeatureTests.test_outbox_success_preserves_recipient_snapshot) ... ok
+test_plaintext_migration (test_features.FeatureTests.test_plaintext_migration) ... ok
+test_profile_and_history_snapshots_have_no_plaintext_secrets (test_features.FeatureTests.test_profile_and_history_snapshots_have_no_plaintext_secrets) ... ok
+test_profiles_switch_independent_preferences (test_features.FeatureTests.test_profiles_switch_independent_preferences) ... ok
+test_restart_recovers_sending_and_claim_is_atomic (test_features.FeatureTests.test_restart_recovers_sending_and_claim_is_atomic) ... ok
+test_retry_may_adopt_corrected_recipient (test_features.FeatureTests.test_retry_may_adopt_corrected_recipient) ... ok
+test_selected_monitor_and_window_region (test_features.FeatureTests.test_selected_monitor_and_window_region) ... ok
+test_statistics_survive_reload (test_features.FeatureTests.test_statistics_survive_reload) ... ok
+test_template_variables_validation_and_html (test_features.FeatureTests.test_template_variables_validation_and_html) ... ok
+test_update_cancel_preserves_existing_file (test_features.FeatureTests.test_update_cancel_preserves_existing_file) ... ok
+test_update_check_detects_new_and_rejects_external_asset (test_features.FeatureTests.test_update_check_detects_new_and_rejects_external_asset) ... ok
+test_update_verified_download_and_corruption (test_features.FeatureTests.test_update_verified_download_and_corruption) ... ok
+test_empty_inputs (test_parser.ParserTests.test_empty_inputs) ... ok
+test_kick (test_parser.ParserTests.test_kick) ... ok
+test_mute_with_tag (test_parser.ParserTests.test_mute_with_tag) ... ok
+test_other_moderator_ignored (test_parser.ParserTests.test_other_moderator_ignored) ... ok
+test_warn_without_tag (test_parser.ParserTests.test_warn_without_tag) ... ok
+test_capture_failure_signals_and_queue_recovers (test_regressions.RegressionTests.test_capture_failure_signals_and_queue_recovers) ... ok
+test_capture_stop_no_keyboard_or_image (test_regressions.RegressionTests.test_capture_stop_no_keyboard_or_image) ... ok
+test_cleanup_keeps_unsent_screenshot (test_regressions.RegressionTests.test_cleanup_keeps_unsent_screenshot) ... ok
+test_group_id_roundtrip (test_regressions.RegressionTests.test_group_id_roundtrip) ... ok
+test_log_missing_then_recreated (test_regressions.RegressionTests.test_log_missing_then_recreated) ... ok
+test_log_partial_utf8_line_and_truncation (test_regressions.RegressionTests.test_log_partial_utf8_line_and_truncation) ... ok
+test_log_replacement_larger_than_old_file (test_regressions.RegressionTests.test_log_replacement_larger_than_old_file) ... ok
+test_log_rewrite_same_size (test_regressions.RegressionTests.test_log_rewrite_same_size) ... ok
+test_other_nickname_prefix_ignored_all_punishments (test_regressions.RegressionTests.test_other_nickname_prefix_ignored_all_punishments) ... ok
+test_parser_escapes_target_and_moderator (test_regressions.RegressionTests.test_parser_escapes_target_and_moderator) ... ok
+test_queue_deduplication (test_regressions.RegressionTests.test_queue_deduplication) ... ok
+test_stop_queue_prevents_pending_start_and_new_events (test_regressions.RegressionTests.test_stop_queue_prevents_pending_start_and_new_events) ... ok
+test_success_capture_unique_ids (test_regressions.RegressionTests.test_success_capture_unique_ids) ... ok
+test_tray_creation_and_bounded_retries (test_regressions.RegressionTests.test_tray_creation_and_bounded_retries) ... ok
+test_unavailable_tray_preserves_taskbar (test_regressions.RegressionTests.test_unavailable_tray_preserves_taskbar) ... ok
+test_vk_validation_never_calls_telegram (test_regressions.RegressionTests.test_vk_validation_never_calls_telegram) ... ok
+test_cancellation_does_not_send (test_worker_client.NotifierTests.test_cancellation_does_not_send) ... ok
+test_delete_failure_does_not_resend (test_worker_client.NotifierTests.test_delete_failure_does_not_resend) ... ok
+test_html_escaped_vk_plain (test_worker_client.NotifierTests.test_html_escaped_vk_plain) ... ok
+test_long_reason_text_retry_does_not_repeat_confirmed_photo (test_worker_client.NotifierTests.test_long_reason_text_retry_does_not_repeat_confirmed_photo) ... ok
+test_long_reason_uses_plain_chunks_and_photo_only_once (test_worker_client.NotifierTests.test_long_reason_uses_plain_chunks_and_photo_only_once) ... ok
+test_telegram_failure_preserves_file_and_redacts_token (test_worker_client.NotifierTests.test_telegram_failure_preserves_file_and_redacts_token) ... ok
+test_telegram_kick_direct_text (test_worker_client.NotifierTests.test_telegram_kick_direct_text) ... ok
+test_telegram_mute_photo_deleted_on_success (test_worker_client.NotifierTests.test_telegram_mute_photo_deleted_on_success) ... ok
+test_vk_kick_and_stable_retry_id (test_worker_client.NotifierTests.test_vk_kick_and_stable_retry_id) ... ok
+test_vk_screenshot_three_attempts_preserves_file (test_worker_client.NotifierTests.test_vk_screenshot_three_attempts_preserves_file) ... ok
+test_missing_token_or_peer (test_worker_client.WorkerClientTests.test_missing_token_or_peer) ... ok
+test_vk_api_error (test_worker_client.WorkerClientTests.test_vk_api_error) ... ok
+test_vk_photo_upload_and_attachment (test_worker_client.WorkerClientTests.test_vk_photo_upload_and_attachment) ... ok
+test_vk_text_direct_api (test_worker_client.WorkerClientTests.test_vk_text_direct_api) ... ok
+
+----------------------------------------------------------------------
+Ran 58 tests in 2.169s
+
+OK
+Bot ID и Chat ID не изменились, повторная проверка не требуется

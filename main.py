@@ -9,13 +9,18 @@ from core.paths import ensure_data_dir, resource_path
 from core.helpers import cleanup, init_local_storage
 import core.globals as g
 from ui.setup_window import SetupWindow
+from core.qt_bootstrap import configure_qt_plugins
 
 
 if __name__ == "__main__":
     try:
         ensure_data_dir()
 
+        configure_qt_plugins()
         app = QApplication(sys.argv)
+        if '--smoke-test' in sys.argv:
+            from tests.gui_smoke import run
+            sys.exit(run(app))
 
         try:
             icon_path = resource_path(os.path.join('path', 'icon.ico'))
@@ -40,7 +45,8 @@ if __name__ == "__main__":
         except Exception:
             pass
 
-        init_local_storage()
+        if not init_local_storage():
+            raise RuntimeError('Не удалось открыть базу настроек')
 
         g.gui_ready = True
 
@@ -48,8 +54,7 @@ if __name__ == "__main__":
         setup_window.show()
 
         exit_code = app.exec_()
-        if g.main_window and hasattr(g.main_window, 'log_monitor'):
-            g.main_window.log_monitor.stop()
+        cleanup()
 
         sys.exit(exit_code)
 
@@ -63,3 +68,4 @@ if __name__ == "__main__":
         except Exception:
             pass
         cleanup()
+        sys.exit(1)

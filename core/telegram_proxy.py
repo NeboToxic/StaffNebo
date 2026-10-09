@@ -17,8 +17,12 @@ def build_proxy_url(proxy_type: str, host: str, port: str, username: str = '', p
     port = (str(port or '')).strip()
     if proxy_type == 'none':
         return None
-    if not host or not port.isdigit():
+    if not host or not port.isdigit() or not 1 <= int(port) <= 65535:
         raise ValueError('Для прокси укажите адрес и порт.')
+    if any(c in host for c in ('/', '@', '?', '#', ' ')):
+        raise ValueError('Укажите только адрес прокси без схемы и пути.')
+    if ':' in host and not host.startswith('['):
+        host = f'[{host}]'  # IPv6 literal
     scheme = 'http' if proxy_type == 'http' else 'socks5h'
     auth = ''
     if username:

@@ -43,6 +43,7 @@ def connect():
     try:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA foreign_keys=ON")
+        conn.execute("PRAGMA secure_delete=ON")
         yield conn
         conn.commit()
     except Exception:

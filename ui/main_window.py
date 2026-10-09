@@ -2,6 +2,7 @@ import os
 import sys
 import subprocess
 import datetime
+from html import escape
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTextEdit, QMenu, QAction, QSizePolicy, QFrame, QCheckBox, QSlider, QSystemTrayIcon, QStyle
@@ -16,6 +17,10 @@ from ui.theme_manager import (
 )
 from core.helpers import gui_print, make_sound
 from core.settings import load_settings, update_settings
+from core import history
+from threads.delivery import DeliveryThread
+from domain.notifier import SendPayload
+from domain.events import PunishmentType
 from core.windows_integration import set_taskbar_hidden
 from core.paths import resource_path
 import core.globals as g
@@ -38,10 +43,13 @@ class MainWindow(QWidget):
 
     sound_requested = pyqtSignal()
     bind_captured = pyqtSignal(object)
+    screenshot_requested = pyqtSignal()
+    log_requested = pyqtSignal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
 
+        self._shutting_down = False
         self.themes = {'Небо': THEMES['Небо']}
         settings = load_settings()
         self.current_theme = 'Небо'
@@ -54,6 +62,8 @@ class MainWindow(QWidget):
         self.ops.sound_signal.connect(self._play_sound)
         self.ops.stats_signal.connect(lambda _t: self.update_stats())
         self.ops.warning_signal.connect(gui_print)
+        self.ops.capture_visibility.connect(self._capture_visibility)
+        self.ops.history_changed.connect(self.update_stats)
 
         self.session_start_time = datetime.datetime.now()
         self.session_timer = QTimer()
@@ -76,6 +86,8 @@ class MainWindow(QWidget):
         self._flush_message_buffer()
 
         self.sound_requested.connect(self._play_sound)
+        self.screenshot_requested.connect(self.take_screenshot, Qt.QueuedConnection)
+        self.log_requested.connect(self.log_message, Qt.QueuedConnection)
 
         self.bind_captured.connect(self._on_bind_captured)
         self._load_bind()
@@ -126,7 +138,7 @@ class MainWindow(QWidget):
             m.addAction(a)
         m.exec_(self.theme_btn.mapToGlobal(self.theme_btn.rect().bottomLeft()))
 
-    def _apply_theme(self, tn):
+    def _apply_theme(self, tn, announce=True):
         if tn not in self.themes:
             return
         self.current_theme = tn
@@ -135,7 +147,8 @@ class MainWindow(QWidget):
         self._update_log_mode_btn_style()
         self._recolor_existing_messages()
         self._save_theme(tn)
-        gui_print(f"[SYSTEM] Тема изменена на: {tn}")
+        if announce:
+            gui_print(f"[SYSTEM] Тема изменена на: {tn}")
 
     def _update_theme_specific_styles(self):
         if hasattr(self, 'title_bar'):
@@ -168,7 +181,7 @@ class MainWindow(QWidget):
             if hasattr(self, "opacity_value"):
                 self.opacity_value.setText(f"{self.panel_opacity}%")
             self.setStyleSheet(self._get_theme_stylesheet())
-            self._apply_theme(self.current_theme)
+            self._apply_theme(self.current_theme, announce=False)
             update_settings(panel_opacity=self.panel_opacity)
         except Exception as e:
             gui_print(f"[ERROR] Ошибка изменения прозрачности панелей: {e}")
@@ -224,7 +237,7 @@ class MainWindow(QWidget):
         self.title_bar = TitleBar(f"Небо  •  NeboProject  •  v{VERSION}", self)
         self.title_label = self.title_bar.title_label
 
-        self.status_label = QLabel("●  ОНЛАЙН")
+        self.status_label = QLabel("●  МОНИТОРИНГ")
         self.status_label.setObjectName("statusLabel")
         self.status_label.setAlignment(Qt.AlignCenter)
         self.title_bar.add_widget(self.status_label)
@@ -234,6 +247,10 @@ class MainWindow(QWidget):
         self.log_mode_btn.setToolTip("Переключить режим отображения логов")
         self.log_mode_btn.clicked.connect(self._toggle_log_display_mode)
         self.title_bar.add_widget(self.log_mode_btn)
+        center_button=QPushButton('Центр')
+        center_button.setToolTip('История, профили, очередь, захват, статистика и обновления')
+        center_button.clicked.connect(lambda:self.window().open_control_center())
+        self.title_bar.add_widget(center_button)
 
         self.minimize_btn = self.title_bar.minimize_btn
         self.maximize_btn = self.title_bar.maximize_btn
@@ -257,12 +274,14 @@ class MainWindow(QWidget):
         hero_title_box.setSpacing(2)
         header = QLabel("Панель управления")
         header.setObjectName("pageTitle")
+        header.setWordWrap(True)
         hero_title_box.addWidget(header)
         subtitle = QLabel("Небо любит Нику")
         subtitle.setObjectName("pageSubtitle")
         hero_title_box.addWidget(subtitle)
         hero.addLayout(hero_title_box, 1)
         project_badge = QLabel("Н Е Б О   P R O J E C T")
+        self.project_badge = project_badge
         project_badge.setObjectName("projectBadge")
         project_badge.setAlignment(Qt.AlignCenter)
         hero.addWidget(project_badge)
@@ -342,7 +361,8 @@ class MainWindow(QWidget):
         self.opacity_value.setMinimumWidth(42)
         self.opacity_value.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         controls.addWidget(self.opacity_value)
-        self.tray_checkbox = QCheckBox("Скрывать в панели задач")
+        self.tray_checkbox = QCheckBox("В трей")
+        self.tray_checkbox.setToolTip("Скрывать приложение в панели задач; восстановление через трей")
         self.tray_checkbox.setChecked(self.hide_from_taskbar)
         self.tray_checkbox.stateChanged.connect(self._on_tray_mode_changed)
         controls.addWidget(self.tray_checkbox)
@@ -352,7 +372,7 @@ class MainWindow(QWidget):
         # Правая панель в стиле референса: статус, часы, быстрые действия, статистика и цитата.
         sidebar = QFrame()
         sidebar.setObjectName("sidePanel")
-        sidebar.setMinimumWidth(270)
+        sidebar.setMinimumWidth(230)
         sidebar.setMaximumWidth(315)
         side_layout = QVBoxLayout(sidebar)
         side_layout.setContentsMargins(0, 0, 0, 0)
@@ -362,10 +382,10 @@ class MainWindow(QWidget):
         status_card.setObjectName("sideCard")
         status_layout = QVBoxLayout(status_card)
         status_layout.setContentsMargins(16, 14, 16, 14)
-        online = QLabel("●  ОНЛАЙН")
+        online = QLabel("●  МОНИТОРИНГ")
         online.setObjectName("onlineTitle")
         status_layout.addWidget(online)
-        status_text = QLabel("Подключение активно")
+        status_text = QLabel("Наблюдение за журналом")
         status_text.setObjectName("mutedText")
         status_layout.addWidget(status_text)
         self.clock_label = QLabel(QDateTime.currentDateTime().toString("dd.MM.yyyy\nHH:mm"))
@@ -430,13 +450,19 @@ class MainWindow(QWidget):
         gui_messages_buffer.clear()
 
     def update_stats(self):
-        self.mutes_label.setText(f"◉  МУТЫ\n{g.all_mutes}")
-        self.warns_label.setText(f"⚠  ВАРНЫ\n{g.all_warns}")
-        self.kicks_label.setText(f"➜  КИКИ\n{g.all_kicks}")
-        if hasattr(self, 'day_mutes'):
-            self.day_mutes.setText(f"◉   Муты                                      {g.all_mutes}")
-            self.day_warns.setText(f"⚠   Варны                                     {g.all_warns}")
-            self.day_kicks.setText(f"➜   Кики                                      {g.all_kicks}")
+        try:
+            from core.database import get_meta
+            stats=history.statistics(get_meta('active_profile',''))
+            day=stats['day']
+            self.mutes_label.setText(f"◉  МУТЫ\n{day.get('mute',0)}")
+            self.warns_label.setText(f"⚠  ВАРНЫ\n{day.get('warn',0)}")
+            self.kicks_label.setText(f"➜  КИКИ\n{day.get('kick',0)}")
+            if hasattr(self,'day_mutes'):
+                self.day_mutes.setText(f"◉   Муты: {day.get('mute',0)}")
+                self.day_warns.setText(f"⚠   Варны: {day.get('warn',0)}")
+                self.day_kicks.setText(f"➜   Кики: {day.get('kick',0)}")
+        except Exception as exc:
+            self.log_message(f'[ERROR] Не удалось обновить статистику: {exc}')
 
     def _update_session_timer(self):
         elapsed = datetime.datetime.now() - self.session_start_time
@@ -479,10 +505,14 @@ class MainWindow(QWidget):
     def log_message(self, message):
         if not isinstance(message, str):
             message = str(message)
+        if message.startswith(('[ERROR]','[WARNING]')):
+            from services.diagnostics import record_error
+            record_error(message)
         if self.filter_new_messages:
             if not any(t in message for t in ['[SYSTEM]', '[ERROR]', '[WARNING]', '[CHAT]']):
                 if '[CHAT]' not in message:
                     return
+        message = escape(message)
         t = self.themes[self.current_theme]
         if self.current_theme == "Light White":
             if "[ERROR]" in message:
@@ -554,12 +584,10 @@ class MainWindow(QWidget):
 
     def process_log_line(self, line):
         global previous_sender, my_nickname
-        if previous_sender == line:
-            return
         if not self.filter_new_messages or '[CHAT]' in line:
             self.log_message(line)
         try:
-            event = parse_moderation_line(line, my_nickname)
+            event = parse_moderation_line(line, g.my_nickname)
             if event is None:
                 return
             previous_sender = line
@@ -568,6 +596,8 @@ class MainWindow(QWidget):
             self.log_message(f"[ERROR] Ошибка при обработке строки '{line}': {e}")
 
     def take_screenshot(self, e=None):
+        if self._shutting_down:
+            return
         # CaptureThread presses 't' for mute/warn — ignore hotkey during op.
         if getattr(self, 'ops', None) is not None and self.ops.is_busy:
             return
@@ -579,18 +609,28 @@ class MainWindow(QWidget):
             return
 
         self._screenshot_busy = True
-        self.screenshot_thread = ScreenshotThread()
+        settings=load_settings()
+        if settings.hide_before_capture:self._capture_visibility(True)
+        self.screenshot_thread = ScreenshotThread(settings)
         self.screenshot_thread.finished_signal.connect(
             self._on_screenshot_created, Qt.UniqueConnection
         )
         self.screenshot_thread.start()
 
     def _on_screenshot_created(self, success, message, filename):
+        self._capture_visibility(False)
+        if self._shutting_down:
+            self._screenshot_busy = False
+            return
         global platform
         self.log_message(message)
         if success and filename:
             self._load_platform()
-            self.message_sender = MessageSenderThread('screenshot', platform, filename)
+            settings=self.screenshot_thread.settings
+            now=datetime.datetime.now().astimezone()
+            payload=SendPayload(PunishmentType.KICK,str(settings.chat_id or '0'),settings.nick,'Ручной скриншот','',now.strftime('%d.%m.%Y'),now.strftime('%H:%M:%S'),needs_photo=True)
+            record=history.create_event(payload,settings,filename,event_type='screenshot')
+            self.message_sender = DeliveryThread(record)
             self.message_sender.finished_signal.connect(
                 self._on_screenshot_sent, Qt.UniqueConnection
             )
@@ -603,6 +643,7 @@ class MainWindow(QWidget):
     def _on_screenshot_sent(self, success, message):
         self._screenshot_busy = False
         self.log_message(message)
+        self.update_stats()
 
     def _start_binding(self):
         """Enter global key-capture mode.
@@ -701,7 +742,7 @@ class MainWindow(QWidget):
                         return
                     self._hotkey_held = True
                     self._hotkey_shot_armed = False
-                    QTimer.singleShot(0, self.take_screenshot)
+                    self.screenshot_requested.emit()
                 except Exception:
                     pass
 
@@ -909,6 +950,7 @@ class MainWindow(QWidget):
         event.accept()
 
     def shutdown(self):
+        self._shutting_down = True
         try:
             if hasattr(self, 'session_timer'):
                 self.session_timer.stop()
@@ -920,8 +962,59 @@ class MainWindow(QWidget):
                 self.message_sender.stop()
             for attr in ['screenshot_thread', 'download_thread']:
                 if hasattr(self, attr) and getattr(self, attr) is not None:
-                    getattr(self, attr).quit()
+                    thread = getattr(self, attr)
+                    if hasattr(thread, 'stop'):
+                        thread.stop()
+                    else:
+                        thread.requestInterruption()
             if hasattr(self, 'keyboard_listener') and self.keyboard_listener:
                 self.keyboard_listener.stop()
         except Exception as e:
             gui_print(f"[ERROR] Ошибка при закрытии: {e}")
+    def has_running_threads(self):
+        if self.ops.has_running_threads():
+            return True
+        return any(getattr(self, name, None) is not None and getattr(self, name).isRunning()
+                   for name in ('log_monitor', 'message_sender', 'screenshot_thread', 'download_thread'))
+
+    def resizeEvent(self, event):
+        if hasattr(self, 'project_badge'):
+            self.project_badge.setVisible(self.width() >= 1100)
+        super().resizeEvent(event)
+
+    def _capture_visibility(self, hidden):
+        top=self.window()
+        if hidden:
+            center=getattr(top,'_control_center',None)
+            self._capture_center_visible=bool(center and center.isVisible())
+            if self._capture_center_visible:center.hide()
+            self._capture_was_visible=top.isVisible()
+            if self._capture_was_visible:top.hide()
+        elif getattr(self,'_capture_was_visible',False) and not self._shutting_down:
+            top.show()
+            self._capture_was_visible=False
+            center=getattr(top,'_control_center',None)
+            if center is not None and getattr(self,'_capture_center_visible',False):center.show()
+
+    def refresh_settings(self):
+        global platform,vk_user_id,my_nickname,using_sounds_in_program,log_display_mode,put_do_logov
+        settings=load_settings()
+        g.apply_settings(settings)
+        platform=settings.platform;vk_user_id=settings.vk_user_id;my_nickname=settings.nick
+        using_sounds_in_program=settings.use_sound;log_display_mode=settings.log_display_mode;put_do_logov=settings.logs
+        self.filter_new_messages=settings.log_display_mode=='chat'
+        self.log_monitor.stop();self.log_monitor.wait(1500)
+        if self.log_monitor.isRunning():raise RuntimeError('Монитор ещё останавливается')
+        self.log_monitor.deleteLater()
+        self.log_monitor=LogMonitorThread(settings.logs)
+        self.log_monitor.update_signal.connect(self.log_message)
+        self.log_monitor.log_line_signal.connect(self.process_log_line)
+        self.log_monitor.start()
+        self.panel_opacity=settings.panel_opacity
+        self.opacity_slider.blockSignals(True);self.opacity_slider.setValue(settings.panel_opacity);self.opacity_slider.blockSignals(False)
+        self.opacity_value.setText(f'{settings.panel_opacity}%')
+        self.hide_from_taskbar=settings.hide_from_taskbar
+        self.tray_checkbox.blockSignals(True);self.tray_checkbox.setChecked(settings.hide_from_taskbar);self.tray_checkbox.blockSignals(False)
+        self._apply_taskbar_mode();self.setStyleSheet(self._get_theme_stylesheet())
+        self._load_bind();self.update_stats()
+        self._update_log_mode_btn_style()

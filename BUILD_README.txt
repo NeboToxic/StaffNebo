@@ -1,19 +1,20 @@
-СБОРКА NEBOPROJECT
+NeboProject 1.3.0 — Windows x64, Python 3.12
+python -m venv .venv
+.venv\Scripts\activate
+python -m pip install -r requirements-lock.txt -r requirements-build.txt
+python run_tests.py
+python -m PyInstaller --clean --noconfirm NeboProject.spec
+python tools/package_release.py
 
-Вариант 1 — Windows:
-1. Установите Python 3.11.
-2. Откройте эту папку в cmd.
-3. Запустите build_windows.bat.
-4. Готовый файл: dist\NeboProject.exe
+Результат: dist/NeboProject.exe; release/*-Windows.zip, *-Source.zip, SHA256SUMS.txt.
+Spec поддерживает пути с кириллицей.
 
-Вариант 2 — GitHub Actions:
-1. Загрузите проект в свой GitHub.
-2. Actions -> Build Windows EXE -> Run workflow.
-3. Скачайте artifact NeboProject-Windows.
+Проверка GUI в PowerShell:
+$env:QT_QPA_PLATFORM='offscreen'
+$env:QT_QPA_FONTDIR='C:\Windows\Fonts'
+$env:NEBO_DATA_DIR=Join-Path $env:TEMP ('nebo-smoke-'+[guid]::NewGuid())
+python main.py --smoke-test
 
-Приложение не требует Cloudflare Worker или сервер исходного HelperTool.
-Для Telegram нужен Bot Token + Chat ID.
-Для VK нужен VK API Token + ID получателя.
-
-### Telegram proxy
-NeboProject supports per-application Telegram HTTP and SOCKS5 proxies. Configure them in the setup window under «Прокси». For SOCKS5, the build installs PySocks through `requests[socks]`.
+Та же проверка: dist/NeboProject.exe --smoke-test.
+Отчёт smoke-result.txt и снимки находятся в NEBO_DATA_DIR.
+Проверки не отправляют реальные сообщения.

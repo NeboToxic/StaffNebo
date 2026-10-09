@@ -40,19 +40,28 @@ def _prepare_photo(photo_path: str):
         return None
 
 
-def send_vk_message(token: str, peer_id: str, text: str, photo_path: str = None, random_id=None):
+def send_vk_message(token: str, peer_id: str, text: str, photo_path: str = None, random_id=None, should_stop=None):
     if not token:
         raise RuntimeError("Не указан VK token")
     if not peer_id:
         raise RuntimeError("Не указан VK ID")
 
+    def check_cancelled():
+        if should_stop and should_stop():
+            raise RuntimeError('Отправка отменена')
+
+    def call(*args, **kwargs):
+        check_cancelled()
+        return _vk_call(*args, **kwargs)
+
+    check_cancelled()
     session = requests.Session()
     rid = random_id if random_id is not None else random.randint(-2**31, 2**31 - 1)
     attachment = ""
 
     try:
         if photo_path:
-            upload_server = _vk_call(
+            upload_server = call(
                 session,
                 "photos.getMessagesUploadServer",
                 {"peer_id": peer_id, "access_token": token, "v": VK_VERSION},
@@ -81,7 +90,7 @@ def send_vk_message(token: str, peer_id: str, text: str, photo_path: str = None,
             for upload_attempt in range(1, 4):
                 try:
                     if upload_attempt > 1:
-                        upload_server = _vk_call(
+                        upload_server = call(
                             session,
                             "photos.getMessagesUploadServer",
                             {"peer_id": peer_id, "access_token": token, "v": VK_VERSION},
@@ -91,6 +100,7 @@ def send_vk_message(token: str, peer_id: str, text: str, photo_path: str = None,
                         if not upload_url:
                             raise RuntimeError(f"VK upload server не вернул upload_url: {upload_server}")
 
+                    check_cancelled()
                     uploaded_response = session.post(
                         upload_url,
                         files={"photo": (upload_name, image_data, upload_mime)},
@@ -106,17 +116,21 @@ def send_vk_message(token: str, peer_id: str, text: str, photo_path: str = None,
                         raise RuntimeError(f"VK загрузка фото вернула неполные данные: {uploaded}")
                     break
                 except Exception as exc:
+                    check_cancelled()
                     last_upload_error = exc
                     if upload_attempt < 3:
                         import time
-                        time.sleep(upload_attempt)
+                        deadline = time.monotonic() + upload_attempt
+                        while time.monotonic() < deadline:
+                            check_cancelled()
+                            time.sleep(min(0.1, max(0, deadline - time.monotonic())))
 
             if uploaded is None:
                 raise RuntimeError(f"Не удалось загрузить фото в VK после 3 попыток: {last_upload_error}")
             if not uploaded.get("photo") or uploaded.get("server") is None or not uploaded.get("hash"):
                 raise RuntimeError(f"VK загрузка фото вернула неполные данные: {uploaded}")
 
-            saved = _vk_call(
+            saved = call(
                 session,
                 "photos.saveMessagesPhoto",
                 {
@@ -134,7 +148,7 @@ def send_vk_message(token: str, peer_id: str, text: str, photo_path: str = None,
             photo = saved[0]
             attachment = f"photo{photo['owner_id']}_{photo['id']}"
 
-        result = _vk_call(
+        result = call(
             session,
             "messages.send",
             {

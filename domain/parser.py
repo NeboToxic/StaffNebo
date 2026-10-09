@@ -1,5 +1,6 @@
 import datetime
 import re
+from html import escape
 from typing import Optional
 
 try:
@@ -15,13 +16,13 @@ from domain.events import ModerationEvent, PunishmentType
 def _format_target(nick: str, tag: Optional[str], strip_dot: bool = False) -> str:
     if tag:
         tag_value = tag.rstrip('.') if strip_dot else tag
-        return f'{nick} ┃ <code>{tag_value}</code>'
+        return f'{escape(nick)} ┃ <code>{escape(tag_value)}</code>'
     nick_value = nick.rstrip('.') if strip_dot else nick
-    return f'<code>{nick_value}</code>'
+    return f'<code>{escape(nick_value)}</code>'
 
 
 def _format_moderator(prefix: str, role: str, nick: str) -> str:
-    return f'{prefix} {role} <code>{nick}</code>'
+    return f'{escape(prefix)} {escape(role)} <code>{escape(nick)}</code>'
 
 
 def _extract_log_time(line: str) -> str:
@@ -36,7 +37,7 @@ def parse_moderation_line(line: str, nickname: str) -> Optional[ModerationEvent]
         return None
 
     escaped_nick = re.escape(nickname)
-    tag_tail = r'\S*(?:\s+\S+)*'
+    tag_tail = r'(?=\s)(?:\s+\S+)*?'
 
     mute_pattern = (
         r'㰳\s+(\S+)\s+(\S+)\s+(' + escaped_nick + r')' + tag_tail +
